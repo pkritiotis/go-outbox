@@ -1,6 +1,8 @@
 package messagebroker
 
-import "github.com/pkritiotis/go-outbox/internal/outbox"
+import (
+	"github.com/pkritiotis/go-outbox/outbox"
+)
 
 type Kafka struct {
 }
