@@ -1,4 +1,4 @@
-package outbox
+package store
 
 import (
 	"github.com/google/uuid"
@@ -10,10 +10,9 @@ type Message struct {
 	Headers     map[string]string
 	Key         string
 	Body        interface{}
-	Topic       MessageTopic
-	Type        MessageType
+	Topic       string
 	State       MessageState
-	CreatedOn   *time.Time
+	CreatedOn   time.Time
 	LockID      *string
 	LockedOn    *time.Time
 	ProcessedOn *time.Time
@@ -26,7 +25,3 @@ const (
 	Processing
 	Processed
 )
-
-type MessageType string
-
-type MessageTopic string

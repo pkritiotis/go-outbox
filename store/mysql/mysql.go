@@ -4,44 +4,62 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"github.com/pkritiotis/go-outbox/outbox"
+	"log"
 	"time"
+
+	"database/sql"
+	"github.com/pkritiotis/outbox/store"
 )
-import sql "database/sql"
 
 type Message struct {
-	outbox.Message
+	store.Message
 }
 
-type MySQL struct {
+type Settings struct {
+	MySQLUsername string
+	MySQLPass     string
+	MySQLHost     string
+	MySQLPort     string
+	MySQLDB       string
+}
+
+type Store struct {
 	db *sql.DB
 }
 
-func (s MySQL) UpdateMessageLockByState(lockID string, lockedOn time.Time, state outbox.MessageState) error {
+func NewStore(settings Settings) (*Store, error) {
+	db, err := sql.Open("mysql",
+		fmt.Sprintf("%v:%v@tcp(%v:%v)/%v?parseTime=True",
+			settings.MySQLUsername, settings.MySQLPass, settings.MySQLHost, settings.MySQLPort, settings.MySQLDB))
+
+	if err != nil || db.Ping() != nil {
+		log.Fatalf("failed to connect to database %v", err)
+		return nil, err
+	}
+	return &Store{db: db}, nil
+}
+
+func (s Store) ClearLocksWithDurationBeforeDate(duration time.Duration, time time.Time) error {
 	panic("implement me")
 }
 
-func (s MySQL) UpdateMessageByID(message outbox.Message) error {
+func (s Store) UpdateMessageLockByState(lockID string, lockedOn time.Time, state store.MessageState) error {
 	panic("implement me")
 }
 
-func (s MySQL) ClearLocksBeforeDate(time time.Time) error {
+func (s Store) UpdateMessageByID(message store.Message) error {
 	panic("implement me")
 }
 
-func (s MySQL) ClearLocksByLockID(lockID string) error {
+func (s Store) ClearLocksByLockID(lockID string) error {
 	panic("implement me")
 }
 
-func (s MySQL) UpdateMessages(messages []outbox.Message) error {
+func (s Store) UpdateMessage(message store.Message) error {
 	panic("implement me")
 }
 
-func (s MySQL) UpdateMessage(message outbox.Message) error {
-	panic("implement me")
-}
-
-func (s MySQL) GetMessagesByLockID(lockID string) ([]outbox.Message, error) {
+func (s Store) GetMessagesByLockID(lockID string) ([]store.Message, error) {
 	rows, err := s.db.Query(fmt.Sprintf(`SELECT * from outbox WHERE lock_id = %v AND locked_by = NULL AND locked_on = NULL AND processed_on = NULl`, lockID))
 	if err != nil {
 		return nil, err
@@ -49,13 +67,13 @@ func (s MySQL) GetMessagesByLockID(lockID string) ([]outbox.Message, error) {
 	defer rows.Close()
 
 	// An album slice to hold data from returned rows.
-	var messages []outbox.Message
+	var messages []store.Message
 
 	// Loop through rows, using Scan to assign column data to struct fields.
 	for rows.Next() {
-		var msg outbox.Message
+		var msg store.Message
 		if err := rows.Scan(&msg.ID, &msg.Key, &msg.Headers, &msg.Body,
-			&msg.Topic, &msg.Type); err != nil {
+			&msg.Topic); err != nil {
 			return messages, err
 		}
 		messages = append(messages, msg)
@@ -66,7 +84,7 @@ func (s MySQL) GetMessagesByLockID(lockID string) ([]outbox.Message, error) {
 	return messages, nil
 }
 
-func (s MySQL) SaveTx(message outbox.Message, tx *sql.Tx) error {
+func (s Store) SaveTx(message store.Message, tx *sql.Tx) error {
 	headers := new(bytes.Buffer)
 	enc := gob.NewEncoder(headers)
 	headerErr := enc.Encode(message.Headers)
