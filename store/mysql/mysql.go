@@ -40,23 +40,100 @@ func NewStore(settings Settings) (*Store, error) {
 }
 
 func (s Store) ClearLocksWithDurationBeforeDate(duration time.Duration, time time.Time) error {
-	panic("implement me")
+	_, err := s.db.Exec(fmt.Sprintf(
+		`UPDATE outbox 
+		SET
+			locked_by=NULL,
+			locked_on=NULL,
+		WHERE locked_on + %v < %v
+		`,
+		duration,
+		time,
+	))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s Store) UpdateMessageLockByState(lockID string, lockedOn time.Time, state store.MessageState) error {
-	panic("implement me")
+	_, err := s.db.Exec(fmt.Sprintf(
+		`UPDATE outbox 
+		SET 
+			locked_by=%v,
+			locked_on=%v,
+		WHERE state = %v
+		`,
+		lockID,
+		lockedOn,
+		state,
+	))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s Store) UpdateMessageByID(message store.Message) error {
-	panic("implement me")
+	headers := new(bytes.Buffer)
+	enc := gob.NewEncoder(headers)
+	headerErr := enc.Encode(message.Headers)
+	if headerErr != nil {
+		return headerErr
+	}
+
+	body := new(bytes.Buffer)
+	enc = gob.NewEncoder(body)
+	bodyErr := enc.Encode(message.Body)
+	if bodyErr != nil {
+		return bodyErr
+	}
+
+	_, err := s.db.Exec(fmt.Sprintf(
+		`UPDATE outbox 
+		SET key= %v,
+			headers=%v,
+			body=%v,
+			topic=%v,
+			type=%v,
+			state=%v,
+			created_on=%v,
+			locked_by=%v,
+			locked_on=%v,
+			processed_on=%v
+		WHERE id = %v
+		`,
+		message.Key,
+		headers,
+		body,
+		message.Topic,
+		message.State,
+		message.CreatedOn,
+		message.LockID,
+		message.LockedOn,
+		message.ProcessedOn,
+		message.ID,
+	))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s Store) ClearLocksByLockID(lockID string) error {
-	panic("implement me")
-}
-
-func (s Store) UpdateMessage(message store.Message) error {
-	panic("implement me")
+	_, err := s.db.Exec(fmt.Sprintf(
+		`UPDATE outbox 
+		SET 
+			locked_by=NULL,
+			locked_on=NULL
+		WHERE id = %v
+		`,
+		lockID,
+	))
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s Store) GetMessagesByLockID(lockID string) ([]store.Message, error) {
