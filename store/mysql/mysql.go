@@ -8,11 +8,12 @@ import (
 	"time"
 
 	"database/sql"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/pkritiotis/outbox/store"
 )
 
 type Message struct {
-	store.Message
+	store.Record
 }
 
 type Settings struct {
@@ -45,7 +46,7 @@ func (s Store) ClearLocksWithDurationBeforeDate(duration time.Duration, time tim
 		SET
 			locked_by=NULL,
 			locked_on=NULL,
-		WHERE locked_on + %v < %v
+		WHERE locked_on + ? < ?
 		`,
 		duration,
 		time,
@@ -57,63 +58,50 @@ func (s Store) ClearLocksWithDurationBeforeDate(duration time.Duration, time tim
 }
 
 func (s Store) UpdateMessageLockByState(lockID string, lockedOn time.Time, state store.MessageState) error {
-	_, err := s.db.Exec(fmt.Sprintf(
+	_, err := s.db.Exec(
 		`UPDATE outbox 
 		SET 
-			locked_by=%v,
-			locked_on=%v,
-		WHERE state = %v
+			locked_by=?,
+			locked_on=?
+		WHERE state = ?
 		`,
 		lockID,
 		lockedOn,
 		state,
-	))
+	)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s Store) UpdateMessageByID(message store.Message) error {
-	headers := new(bytes.Buffer)
-	enc := gob.NewEncoder(headers)
-	headerErr := enc.Encode(message.Headers)
-	if headerErr != nil {
-		return headerErr
+func (s Store) UpdateMessageByID(rec store.Record) error {
+	msgData := new(bytes.Buffer)
+	enc := gob.NewEncoder(msgData)
+	encErr := enc.Encode(rec.Message)
+	if encErr != nil {
+		return encErr
 	}
 
-	body := new(bytes.Buffer)
-	enc = gob.NewEncoder(body)
-	bodyErr := enc.Encode(message.Body)
-	if bodyErr != nil {
-		return bodyErr
-	}
-
-	_, err := s.db.Exec(fmt.Sprintf(
+	_, err := s.db.Exec(
 		`UPDATE outbox 
-		SET key= %v,
-			headers=%v,
-			body=%v,
-			topic=%v,
-			type=%v,
-			state=%v,
-			created_on=%v,
-			locked_by=%v,
-			locked_on=%v,
-			processed_on=%v
-		WHERE id = %v
+		SET 
+			data=?,
+			state=?,
+			created_on=?,
+			locked_by=?,
+			locked_on=?,
+			processed_on=?
+		WHERE id = ?
 		`,
-		message.Key,
-		headers,
-		body,
-		message.Topic,
-		message.State,
-		message.CreatedOn,
-		message.LockID,
-		message.LockedOn,
-		message.ProcessedOn,
-		message.ID,
-	))
+		msgData.Bytes(),
+		rec.State,
+		rec.CreatedOn,
+		rec.LockID,
+		rec.LockedOn,
+		rec.ProcessedOn,
+		rec.ID,
+	)
 	if err != nil {
 		return err
 	}
@@ -126,7 +114,7 @@ func (s Store) ClearLocksByLockID(lockID string) error {
 		SET 
 			locked_by=NULL,
 			locked_on=NULL
-		WHERE id = %v
+		WHERE id = ?
 		`,
 		lockID,
 	))
@@ -136,24 +124,34 @@ func (s Store) ClearLocksByLockID(lockID string) error {
 	return nil
 }
 
-func (s Store) GetMessagesByLockID(lockID string) ([]store.Message, error) {
-	rows, err := s.db.Query(fmt.Sprintf(`SELECT * from outbox WHERE lock_id = %v AND locked_by = NULL AND locked_on = NULL AND processed_on = NULl`, lockID))
+func (s Store) GetMessagesByLockID(lockID string) ([]store.Record, error) {
+	rows, err := s.db.Query("SELECT id, data from outbox WHERE locked_by = ?", lockID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	// An album slice to hold data from returned rows.
-	var messages []store.Message
+	var messages []store.Record
 
 	// Loop through rows, using Scan to assign column data to struct fields.
 	for rows.Next() {
-		var msg store.Message
-		if err := rows.Scan(&msg.ID, &msg.Key, &msg.Headers, &msg.Body,
-			&msg.Topic); err != nil {
+		var rec store.Record
+		var data []byte
+		scanErr := rows.Scan(&rec.ID, &data)
+		if scanErr != nil {
+			if scanErr == sql.ErrNoRows {
+				return messages, nil
+			}
 			return messages, err
 		}
-		messages = append(messages, msg)
+
+		decErr := gob.NewDecoder(bytes.NewReader(data)).Decode(&rec.Message)
+		if decErr != nil {
+			return nil, decErr
+		}
+
+		messages = append(messages, rec)
 	}
 	if err = rows.Err(); err != nil {
 		return messages, err
@@ -161,34 +159,23 @@ func (s Store) GetMessagesByLockID(lockID string) ([]store.Message, error) {
 	return messages, nil
 }
 
-func (s Store) SaveTx(message store.Message, tx *sql.Tx) error {
-	headers := new(bytes.Buffer)
-	enc := gob.NewEncoder(headers)
-	headerErr := enc.Encode(message.Headers)
-	if headerErr != nil {
-		return headerErr
+func (s Store) SaveTx(rec store.Record, tx *sql.Tx) error {
+	msgBuf := new(bytes.Buffer)
+	msgEnc := gob.NewEncoder(msgBuf)
+	encErr := msgEnc.Encode(rec.Message)
+	if encErr != nil {
+		return encErr
 	}
+	q := "INSERT INTO outbox (id, data, state, created_on,locked_by,locked_on,processed_on) VALUES (?,?,?,?,?,?,?)"
 
-	body := new(bytes.Buffer)
-	enc = gob.NewEncoder(body)
-	bodyErr := enc.Encode(message.Body)
-	if bodyErr != nil {
-		return bodyErr
-	}
-
-	_, err := tx.Exec(fmt.Sprintf(
-		`INSERT INTO outbox (id, key, headers, body, topic, type, state, created_on,locked_by,locked_on,processed_on)
-			VALUES (%v,'%v','%v','%v',%v,%v,%v,%v,%v,%v)`,
-		message.ID,
-		message.Key,
-		headers,
-		body,
-		message.Topic,
-		message.State,
-		message.CreatedOn,
-		message.LockID,
-		message.LockedOn,
-		message.ProcessedOn))
+	_, err := tx.Exec(q,
+		rec.ID,
+		msgBuf.Bytes(),
+		rec.State,
+		rec.CreatedOn,
+		rec.LockID,
+		rec.LockedOn,
+		rec.ProcessedOn)
 	if err != nil {
 		return err
 	}
