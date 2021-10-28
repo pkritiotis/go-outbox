@@ -6,11 +6,11 @@ import (
 )
 
 type Store interface {
-	SaveTx(message Message, tx *sql.Tx) error
+	SaveTx(message Record, tx *sql.Tx) error
 
 	UpdateMessageLockByState(lockID string, lockedOn time.Time, state MessageState) error
-	GetMessagesByLockID(lockID string) ([]Message, error)
-	UpdateMessageByID(message Message) error
+	GetMessagesByLockID(lockID string) ([]Record, error)
+	UpdateMessageByID(message Record) error
 
 	ClearLocksWithDurationBeforeDate(duration time.Duration, time time.Time) error
 	ClearLocksByLockID(lockID string) error

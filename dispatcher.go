@@ -81,7 +81,7 @@ func (d Dispatcher) processMessages(lockID string) error {
 			continue
 		}
 
-		// 4b. Message sent successfully - Remove lock information and update state to processed
+		// 4b. Record sent successfully - Remove lock information and update state to processed
 		removeLockErr := removeLockFromMessage(msg, d)
 		if removeLockErr != nil {
 			// if an update of a message failed try to clear the rest of the locks and return
@@ -112,7 +112,7 @@ func (d Dispatcher) unlockExpiredMessages() error {
 	return nil
 }
 
-func removeLockFromMessage(msg store.Message, d Dispatcher) error {
+func removeLockFromMessage(msg store.Record, d Dispatcher) error {
 	msg.LockedOn = nil
 	msg.LockID = nil
 	msg.State = store.Processed
@@ -120,12 +120,12 @@ func removeLockFromMessage(msg store.Message, d Dispatcher) error {
 	return err
 }
 
-func sendMessageToBroker(d Dispatcher, msg store.Message) error {
+func sendMessageToBroker(d Dispatcher, msg store.Record) error {
 	err := d.broker.Send(broker.Message{
-		Key:     msg.Key,
-		Headers: msg.Headers,
-		Body:    msg.Body,
-		Topic:   msg.Topic,
+		Key:     msg.Message.Key,
+		Headers: msg.Message.Headers,
+		Body:    msg.Message.Body,
+		Topic:   msg.Message.Topic,
 	})
 	return err
 }

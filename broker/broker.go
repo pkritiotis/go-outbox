@@ -8,6 +8,6 @@ type Broker interface {
 type Message struct {
 	Key     string
 	Headers map[string]string
-	Body    interface{}
+	Body    []byte
 	Topic   string
 }
