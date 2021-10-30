@@ -50,8 +50,8 @@ func main() {
 	}, tx)
 	tx.Commit()
 	s := outbox.NewDispatcher(store, broker, settings)
-	err := s.Run()
-	if err != nil {
-		os.Exit(1)
-	}
+	errChan := make(chan error)
+	go s.Run(errChan)
+	err := <-errChan
+	fmt.Printf(err.Error())
 }
