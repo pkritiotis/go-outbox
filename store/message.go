@@ -1,10 +1,5 @@
 package store
 
-import (
-	"github.com/google/uuid"
-	"time"
-)
-
 /*
 CREATE TABLE outbox (
 	id varchar(100) NOT NULL,
@@ -20,31 +15,3 @@ DEFAULT CHARSET=latin1
 COLLATE=latin1_general_ci;
 
 */
-type Header struct {
-	Key   string
-	Value string
-}
-
-type Message struct {
-	Key     string
-	Headers []Header
-	Body    []byte
-	Topic   string
-}
-type Record struct {
-	ID          uuid.UUID
-	Message     Message
-	State       MessageState
-	CreatedOn   time.Time
-	LockID      *string
-	LockedOn    *time.Time
-	ProcessedOn *time.Time
-}
-
-type MessageState int
-
-const (
-	Unprocessed MessageState = iota
-	Processing
-	Processed
-)

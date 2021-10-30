@@ -9,11 +9,11 @@ import (
 
 	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/pkritiotis/outbox/store"
+	"github.com/pkritiotis/outbox"
 )
 
 type Message struct {
-	store.Record
+	outbox.Record
 }
 
 type Settings struct {
@@ -57,7 +57,7 @@ func (s Store) ClearLocksWithDurationBeforeDate(duration time.Duration, time tim
 	return nil
 }
 
-func (s Store) UpdateMessageLockByState(lockID string, lockedOn time.Time, state store.MessageState) error {
+func (s Store) UpdateRecordLockByState(lockID string, lockedOn time.Time, state outbox.RecordState) error {
 	_, err := s.db.Exec(
 		`UPDATE outbox 
 		SET 
@@ -75,7 +75,7 @@ func (s Store) UpdateMessageLockByState(lockID string, lockedOn time.Time, state
 	return nil
 }
 
-func (s Store) UpdateMessageByID(rec store.Record) error {
+func (s Store) UpdateRecordByID(rec outbox.Record) error {
 	msgData := new(bytes.Buffer)
 	enc := gob.NewEncoder(msgData)
 	encErr := enc.Encode(rec.Message)
@@ -124,7 +124,7 @@ func (s Store) ClearLocksByLockID(lockID string) error {
 	return nil
 }
 
-func (s Store) GetMessagesByLockID(lockID string) ([]store.Record, error) {
+func (s Store) GetRecordByLockID(lockID string) ([]outbox.Record, error) {
 	rows, err := s.db.Query("SELECT id, data from outbox WHERE locked_by = ?", lockID)
 	if err != nil {
 		return nil, err
@@ -132,11 +132,11 @@ func (s Store) GetMessagesByLockID(lockID string) ([]store.Record, error) {
 	defer rows.Close()
 
 	// An album slice to hold data from returned rows.
-	var messages []store.Record
+	var messages []outbox.Record
 
 	// Loop through rows, using Scan to assign column data to struct fields.
 	for rows.Next() {
-		var rec store.Record
+		var rec outbox.Record
 		var data []byte
 		scanErr := rows.Scan(&rec.ID, &data)
 		if scanErr != nil {
@@ -159,7 +159,7 @@ func (s Store) GetMessagesByLockID(lockID string) ([]store.Record, error) {
 	return messages, nil
 }
 
-func (s Store) SaveTx(rec store.Record, tx *sql.Tx) error {
+func (s Store) AddRecordTx(rec outbox.Record, tx *sql.Tx) error {
 	msgBuf := new(bytes.Buffer)
 	msgEnc := gob.NewEncoder(msgBuf)
 	encErr := msgEnc.Encode(rec.Message)
