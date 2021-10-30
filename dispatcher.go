@@ -120,13 +120,20 @@ func removeLockFromMessage(msg store.Record, d Dispatcher) error {
 	return err
 }
 
-func sendMessageToBroker(d Dispatcher, msg store.Record) error {
-	err := d.broker.Send(broker.Message{
-		Key:     msg.Message.Key,
-		Headers: msg.Message.Headers,
-		Body:    msg.Message.Body,
-		Topic:   msg.Message.Topic,
-	})
+func sendMessageToBroker(d Dispatcher, rec store.Record) error {
+	msg := broker.Message{
+		Key:   rec.Message.Key,
+		Body:  rec.Message.Body,
+		Topic: rec.Message.Topic,
+	}
+	for _, h := range rec.Message.Headers {
+		msg.Headers = append(msg.Headers, broker.Header{
+			Key:   h.Key,
+			Value: h.Value,
+		})
+	}
+
+	err := d.broker.Send(msg)
 	return err
 }
 
