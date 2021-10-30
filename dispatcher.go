@@ -1,11 +1,16 @@
 package outbox
 
 import (
-	"github.com/pkritiotis/outbox/broker"
-	"github.com/pkritiotis/outbox/store"
+	"log"
 	"time"
 )
 
+//MessageBroker provides an interface for message brokers to send Message objects
+type MessageBroker interface {
+	Send(message Message) error
+}
+
+// DispatcherSettings defines the set of configurations for the dispatcher
 type DispatcherSettings struct {
 	MachineID                  string
 	ProcessIntervalSeconds     int
@@ -14,50 +19,47 @@ type DispatcherSettings struct {
 }
 
 type Dispatcher struct {
-	store    store.Store
-	broker   broker.Broker
-	settings DispatcherSettings
+	store         Store
+	messageBroker MessageBroker
+	settings      DispatcherSettings
 }
 
 // NewDispatcher initializes the dispatcher worker
-func NewDispatcher(store store.Store, broker broker.Broker, settings DispatcherSettings) Dispatcher {
+func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSettings) Dispatcher {
 	return Dispatcher{
-		store:    store,
-		broker:   broker,
-		settings: settings,
+		store:         store,
+		messageBroker: broker,
+		settings:      settings,
 	}
 }
 
-//StartDispatcher periodically checks for new outbox messages from the Store, sends the messages through the Broker
+//Run periodically checks for new outbox messages from the Store, sends the messages through the MessageBroker
 //and updates the message status accordingly
-func (d Dispatcher) Run() error {
+func (d Dispatcher) Run(errChan chan<- error) {
 
-	processErr := d.runMessageProcessor()
-	if processErr != nil {
-		return processErr
-	}
+	go d.runRecordProcessor(errChan)
 
-	unlockerErr := d.runMessageUnlocker()
-	if unlockerErr != nil {
-		return unlockerErr
-	}
-
-	return nil
+	go d.runRecordUnlocker(errChan)
 }
 
-func (d Dispatcher) runMessageProcessor() error {
+// runRecordProcessor processes the unsent records of the store
+func (d Dispatcher) runRecordProcessor(errChan chan<- error) {
+	log.Print("Record Processor Started")
 	lockID := d.settings.MachineID
 	for {
-		err := d.processMessages(lockID)
+		log.Print("Record Processor Running")
+
+		err := d.processRecords(lockID)
 		if err != nil {
-			return err
+			errChan <- err
 		}
+		log.Print("Record Processor Finished")
+
 		time.Sleep(time.Duration(d.settings.ProcessIntervalSeconds) * time.Second)
 	}
-	return nil
 }
 
-func (d Dispatcher) processMessages(lockID string) error {
+func (d Dispatcher) processRecords(lockID string) error {
 	// 1. Lock unsent entities
 	lockErr := lockUnprocessedEntities(d, lockID)
 	if lockErr != nil {
@@ -65,7 +67,7 @@ func (d Dispatcher) processMessages(lockID string) error {
 	}
 
 	// 2. Fetch locked entities
-	messages, msgErr := d.store.GetMessagesByLockID(lockID)
+	messages, msgErr := d.store.GetRecordByLockID(lockID)
 	if msgErr != nil {
 		return msgErr
 	}
@@ -77,7 +79,7 @@ func (d Dispatcher) processMessages(lockID string) error {
 		if brokerErr != nil {
 			msg.LockID = nil
 			msg.LockedOn = nil
-			_ = d.store.UpdateMessageByID(msg)
+			_ = d.store.UpdateRecordByID(msg)
 			continue
 		}
 
@@ -92,12 +94,17 @@ func (d Dispatcher) processMessages(lockID string) error {
 	return nil
 }
 
-func (d Dispatcher) runMessageUnlocker() error {
+func (d Dispatcher) runRecordUnlocker(errChan chan<- error) {
+	log.Print("Record Unlocker Started")
 	for {
+		log.Print("Record Unlocker Running")
+
 		err := d.unlockExpiredMessages()
 		if err != nil {
 			// won't do anything here
 		}
+		log.Print("Record Unlocker finished")
+
 		time.Sleep(time.Duration(d.settings.LockCheckerIntervalSeconds) * time.Second)
 	}
 }
@@ -112,35 +119,23 @@ func (d Dispatcher) unlockExpiredMessages() error {
 	return nil
 }
 
-func removeLockFromMessage(msg store.Record, d Dispatcher) error {
-	msg.LockedOn = nil
-	msg.LockID = nil
-	msg.State = store.Processed
-	err := d.store.UpdateMessageByID(msg)
+func removeLockFromMessage(rec Record, d Dispatcher) error {
+	rec.LockedOn = nil
+	rec.LockID = nil
+	rec.State = Processed
+	err := d.store.UpdateRecordByID(rec)
 	return err
 }
 
-func sendMessageToBroker(d Dispatcher, rec store.Record) error {
-	msg := broker.Message{
-		Key:   rec.Message.Key,
-		Body:  rec.Message.Body,
-		Topic: rec.Message.Topic,
-	}
-	for _, h := range rec.Message.Headers {
-		msg.Headers = append(msg.Headers, broker.Header{
-			Key:   h.Key,
-			Value: h.Value,
-		})
-	}
-
-	err := d.broker.Send(msg)
+func sendMessageToBroker(d Dispatcher, rec Record) error {
+	err := d.messageBroker.Send(rec.Message)
 	return err
 }
 
 // lockUnprocessedEntities updates the messages with the current machine's lockID
 func lockUnprocessedEntities(d Dispatcher, lockID string) error {
 	lockTime := time.Now().UTC()
-	lockErr := d.store.UpdateMessageLockByState(lockID, lockTime, store.Unprocessed)
+	lockErr := d.store.UpdateRecordLockByState(lockID, lockTime, Unprocessed)
 	if lockErr != nil {
 		return lockErr
 	}
