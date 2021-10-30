@@ -163,6 +163,7 @@ func (s Store) SaveTx(rec store.Record, tx *sql.Tx) error {
 	msgBuf := new(bytes.Buffer)
 	msgEnc := gob.NewEncoder(msgBuf)
 	encErr := msgEnc.Encode(rec.Message)
+
 	if encErr != nil {
 		return encErr
 	}

@@ -20,9 +20,14 @@ DEFAULT CHARSET=latin1
 COLLATE=latin1_general_ci;
 
 */
+type Header struct {
+	Key   string
+	Value string
+}
+
 type Message struct {
-	Headers map[string]string
 	Key     string
+	Headers []Header
 	Body    []byte
 	Topic   string
 }
