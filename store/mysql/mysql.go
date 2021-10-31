@@ -124,7 +124,7 @@ func (s Store) ClearLocksByLockID(lockID string) error {
 	return nil
 }
 
-func (s Store) GetRecordByLockID(lockID string) ([]outbox.Record, error) {
+func (s Store) GetRecordsByLockID(lockID string) ([]outbox.Record, error) {
 	rows, err := s.db.Query("SELECT id, data from outbox WHERE locked_by = ?", lockID)
 	if err != nil {
 		return nil, err
