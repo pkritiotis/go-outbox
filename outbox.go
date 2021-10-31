@@ -31,6 +31,8 @@ type RecordState int
 const (
 	Unprocessed RecordState = iota
 	Processed
+	MaxAttemptsReached
+	AttemptTimeoutExpired
 )
 
 func (s Outbox) Add(msg Message, tx *sql.Tx) error {
