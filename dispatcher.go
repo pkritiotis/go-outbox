@@ -5,9 +5,21 @@ import (
 	"time"
 )
 
+type ErrorType int
+
+const (
+	BrokerUnavailable ErrorType = iota
+	Other
+)
+
+type BrokerError struct {
+	Error error
+	Type  ErrorType
+}
+
 //MessageBroker provides an interface for message brokers to send Message objects
 type MessageBroker interface {
-	Send(message Message) error
+	Send(message Message) *BrokerError
 }
 
 // DispatcherSettings defines the set of configurations for the dispatcher
@@ -63,22 +75,22 @@ func (d Dispatcher) runRecordProcessor(errChan chan<- error) {
 }
 
 func (d Dispatcher) processRecords() error {
-	lockErr := d.lockUnprocessedEntities()
-	if lockErr != nil {
-		return lockErr
-	}
-
 	// While records are unprocessed, publish messages in batches
 	for {
-		// Fetch next batch locked entities
-		messages, msgErr := d.store.GetRecordsByLockID(d.machineID, d.settings.RecordProcessBatchNumber, d.settings.MaxSendAttempts)
-		if msgErr != nil {
-			return msgErr
+		err := d.lockUnprocessedEntities()
+		if err != nil {
+			return err
 		}
-		if len(messages) == 0 {
+
+		// Fetch next batch locked entities
+		records, err := d.store.GetRecordsByLockID(d.machineID, d.settings.MaxSendAttempts)
+		if err != nil {
+			return err
+		}
+		if len(records) == 0 {
 			break
 		}
-		err := d.publishMessages(messages)
+		err = d.publishMessages(records)
 		if err != nil {
 			return err
 		}
@@ -90,19 +102,27 @@ func (d Dispatcher) publishMessages(records []Record) error {
 
 	for _, rec := range records {
 		// Publish message to message broker
-		brokerErr := d.messageBroker.Send(rec.Message)
 		now := time.Now().UTC()
-		rec.NumberOfAttempts++
 		rec.LastAttemptOn = &now
+		rec.NumberOfAttempts++
+		err := d.messageBroker.Send(rec.Message)
 
-		// If an error occurs, remove lock information and update retrial times
-		if brokerErr != nil {
+		// If an error occurs, remove lock information, update retrial times and continue
+		if err != nil {
+			// if the error is because of broker availability there is no reason to process the rest of the messages now - retry later
+			if err.Type == BrokerUnavailable {
+				return nil
+			}
+
 			rec.LockedOn = nil
 			rec.LockID = nil
+			errorMsg := err.Error.Error()
+			rec.Error = &errorMsg
 			if rec.NumberOfAttempts == d.settings.MaxSendAttempts {
 				rec.State = MaxAttemptsReached
 			}
 			_ = d.store.UpdateRecordByID(rec)
+
 			continue
 		}
 
@@ -111,10 +131,10 @@ func (d Dispatcher) publishMessages(records []Record) error {
 		rec.LockedOn = nil
 		rec.LockID = nil
 		rec.ProcessedOn = &now
-		removeLockErr := d.store.UpdateRecordByID(rec)
+		err = d.store.UpdateRecordByID(rec)
 
-		if removeLockErr != nil {
-			return removeLockErr
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -148,7 +168,7 @@ func (d Dispatcher) unlockExpiredMessages() error {
 // lockUnprocessedEntities updates the messages with the current machine's lockID
 func (d Dispatcher) lockUnprocessedEntities() error {
 	lockTime := time.Now().UTC()
-	lockErr := d.store.UpdateRecordLockByState(d.machineID, lockTime, Unprocessed)
+	lockErr := d.store.UpdateRecordLockByState(d.machineID, lockTime, Unprocessed, d.settings.RecordProcessBatchNumber)
 	if lockErr != nil {
 		return lockErr
 	}
