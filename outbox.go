@@ -6,41 +6,37 @@ import (
 	"time"
 )
 
+//Outbox encapsulates the save functionality of the outbox pattern
 type Outbox struct {
 	store Store
 }
 
+//New is the Outbox constructor
 func New(store Store) Outbox {
 	return Outbox{store: store}
 }
 
-type Header struct {
+//MessageHeader is the MessageHeader of the Message to be sent. It is used by Brokers
+type MessageHeader struct {
 	Key   string
 	Value string
 }
 
+//Message encapsulates the contents of the message to be sent
 type Message struct {
 	Key     string
-	Headers []Header
+	Headers []MessageHeader
 	Body    []byte
 	Topic   string
 }
 
-type RecordState int
-
-const (
-	Unprocessed RecordState = iota
-	Processed
-	MaxAttemptsReached
-	AttemptTimeoutExpired
-)
-
+//Add stores the msg Message within the provided SQL tx
 func (s Outbox) Add(msg Message, tx *sql.Tx) error {
 	newID, _ := uuid.NewUUID()
 	record := Record{
 		ID:          newID,
 		Message:     msg,
-		State:       Unprocessed,
+		State:       PendingDelivery,
 		CreatedOn:   time.Now().UTC(),
 		LockID:      nil,
 		LockedOn:    nil,
