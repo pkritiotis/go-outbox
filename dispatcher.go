@@ -57,18 +57,20 @@ func (d Dispatcher) Run(errChan chan<- error, doneChan <-chan bool) {
 func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan bool) {
 	ticker := time.NewTicker(time.Duration(d.settings.ProcessIntervalSeconds) * time.Second)
 	for {
+		log.Print("Record Processor Running")
+		err := d.recordProcessor.processRecords()
+		if err != nil {
+			errChan <- err
+		}
+		log.Print("Record Processing Finished")
+
 		select {
+		case <-ticker.C:
+			continue
 		case <-doneChan:
 			ticker.Stop()
 			log.Print("Stopping Record Processor")
 			return
-		case <-ticker.C:
-			log.Print("Record Processor Running")
-			err := d.recordProcessor.processRecords()
-			if err != nil {
-				errChan <- err
-			}
-			log.Print("Record Processing Finished")
 		}
 	}
 }

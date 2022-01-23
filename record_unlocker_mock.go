@@ -5,12 +5,12 @@ import (
 	"sync"
 )
 
-type MockRecordUnlocker struct {
+type mockRecordUnlocker struct {
 	wg sync.WaitGroup
 	mock.Mock
 }
 
-func (m MockRecordUnlocker) unlockExpiredMessages() error {
+func (m mockRecordUnlocker) unlockExpiredMessages() error {
 	defer m.wg.Done()
 	args := m.Called()
 	return args.Error(0)
