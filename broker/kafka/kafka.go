@@ -8,7 +8,7 @@ import (
 type Broker struct {
 }
 
-func (k Broker) Send(event outbox.Message) error {
+func (k Broker) Send(event outbox.Message) *outbox.BrokerError {
 
 	fmt.Printf("i'm here %v,%v\n", event, string(event.Body))
 	return nil

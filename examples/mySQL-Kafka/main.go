@@ -29,8 +29,7 @@ func main() {
 	}
 	broker := kafka.Broker{}
 	settings := outbox.DispatcherSettings{
-		MachineID:                  "1",
-		ProcessIntervalSeconds:     100,
+		ProcessIntervalSeconds:     20,
 		LockCheckerIntervalSeconds: 600,
 		MaxLockTimeDurationMins:    5,
 	}
@@ -49,9 +48,10 @@ func main() {
 		Topic:   "sampleTopic",
 	}, tx)
 	tx.Commit()
-	s := outbox.NewDispatcher(store, broker, settings)
+	s := outbox.NewDispatcher(store, broker, settings, "1")
 	errChan := make(chan error)
-	go s.Run(errChan)
+	doneChan := make(chan bool)
+	s.Run(errChan, doneChan)
 	err := <-errChan
 	fmt.Printf(err.Error())
 }
