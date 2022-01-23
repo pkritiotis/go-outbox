@@ -1,22 +1,23 @@
 package outbox
 
 import (
-	"time"
+	"github.com/pkritiotis/outbox/internal/time"
+	time2 "time"
 )
 
 type recordUnlocker struct {
 	store                   Store
-	MaxLockTimeDurationMins time.Duration
+	time                    time.Provider
+	MaxLockTimeDurationMins time2.Duration
 }
 
-func newRecordUnlocker(store Store, maxLockTimeDurationMins time.Duration) *recordUnlocker {
+func newRecordUnlocker(store Store, maxLockTimeDurationMins time2.Duration) *recordUnlocker {
 	return &recordUnlocker{MaxLockTimeDurationMins: maxLockTimeDurationMins, store: store}
 }
 
 func (d recordUnlocker) unlockExpiredMessages() error {
-	duration := d.MaxLockTimeDurationMins
-	expiryTime := time.Now().UTC()
-	clearErr := d.store.ClearLocksWithDurationBeforeDate(duration, expiryTime)
+	expiryTime := d.time.Now().UTC().Add(-d.MaxLockTimeDurationMins)
+	clearErr := d.store.ClearLocksWithDurationBeforeDate(expiryTime)
 	if clearErr != nil {
 		return clearErr
 	}
