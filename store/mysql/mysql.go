@@ -40,15 +40,14 @@ func NewStore(settings Settings) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-func (s Store) ClearLocksWithDurationBeforeDate(duration time.Duration, time time.Time) error {
+func (s Store) ClearLocksWithDurationBeforeDate(time time.Time) error {
 	_, err := s.db.Exec(fmt.Sprintf(
 		`UPDATE outbox 
 		SET
 			locked_by=NULL,
 			locked_on=NULL,
-		WHERE locked_on + ? < ?
+		WHERE locked_on < ?
 		`,
-		duration,
 		time,
 	))
 	if err != nil {

@@ -31,8 +31,8 @@ func (m MockStore) UpdateRecordByID(message Record) error {
 	return args.Error(0)
 }
 
-func (m MockStore) ClearLocksWithDurationBeforeDate(duration time.Duration, time time.Time) error {
-	args := m.Called(duration, time)
+func (m MockStore) ClearLocksWithDurationBeforeDate(time time.Time) error {
+	args := m.Called(time)
 	return args.Error(0)
 }
 

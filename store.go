@@ -43,7 +43,7 @@ type Store interface {
 	//UpdateRecordByID updates the provided the record
 	UpdateRecordByID(message Record) error
 	//ClearLocksWithDurationBeforeDate clears the locks of records with a lock time before the provided time
-	ClearLocksWithDurationBeforeDate(duration time.Duration, time time.Time) error
+	ClearLocksWithDurationBeforeDate(time time.Time) error
 	//ClearLocksByLockID clears all records locked by the provided lockID
 	ClearLocksByLockID(lockID string) error
 }
