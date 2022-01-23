@@ -1,20 +1,27 @@
 package outbox
 
 import (
-	"time"
+	"github.com/pkritiotis/outbox/internal/time"
 )
 
 //defaultRecordProcessor checks and dispatches new messages to be sent
 type defaultRecordProcessor struct {
 	messageBroker   MessageBroker
 	store           Store
+	time            time.Provider
 	machineID       string
 	MaxSendAttempts int
 }
 
 //newProcessor constructs a new defaultRecordProcessor
 func newProcessor(store Store, messageBroker MessageBroker, machineID string, maxSendAttempts int) *defaultRecordProcessor {
-	return &defaultRecordProcessor{machineID: machineID, messageBroker: messageBroker, MaxSendAttempts: maxSendAttempts, store: store}
+	return &defaultRecordProcessor{
+		messageBroker:   messageBroker,
+		store:           store,
+		time:            time.NewTimeProvider(),
+		machineID:       machineID,
+		MaxSendAttempts: maxSendAttempts,
+	}
 }
 
 //ProcessRecords locks unprocessed messages, tries to deliver them and then unlocks them
@@ -43,7 +50,7 @@ func (d defaultRecordProcessor) publishMessages(records []Record) error {
 
 	for _, rec := range records {
 		// Publish message to message broker
-		now := time.Now().UTC()
+		now := d.time.Now().UTC()
 		rec.LastAttemptOn = &now
 		rec.NumberOfAttempts++
 		brokerErr := d.messageBroker.Send(rec.Message)
@@ -74,7 +81,7 @@ func (d defaultRecordProcessor) publishMessages(records []Record) error {
 		rec.ProcessedOn = &now
 		err := d.store.UpdateRecordByID(rec)
 
-		if brokerErr != nil {
+		if err != nil {
 			return err
 		}
 	}
@@ -83,7 +90,7 @@ func (d defaultRecordProcessor) publishMessages(records []Record) error {
 
 // lockUnprocessedEntities updates the messages with the current machine's lockID
 func (d defaultRecordProcessor) lockUnprocessedEntities() error {
-	lockTime := time.Now().UTC()
+	lockTime := d.time.Now().UTC()
 	lockErr := d.store.UpdateRecordLockByState(d.machineID, lockTime, PendingDelivery)
 	if lockErr != nil {
 		return lockErr
