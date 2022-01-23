@@ -2,18 +2,20 @@ package outbox
 
 import (
 	"database/sql"
-	"github.com/google/uuid"
-	"time"
+	"github.com/pkritiotis/outbox/internal/time"
+	"github.com/pkritiotis/outbox/internal/uuid"
 )
 
 //Outbox encapsulates the save functionality of the outbox pattern
 type Outbox struct {
 	store Store
+	time  time.Provider
+	uuid  uuid.Provider
 }
 
 //New is the Outbox constructor
 func New(store Store) Outbox {
-	return Outbox{store: store}
+	return Outbox{store: store, time: time.NewTimeProvider(), uuid: uuid.NewUUIDProvider()}
 }
 
 //MessageHeader is the MessageHeader of the Message to be sent. It is used by Brokers
@@ -31,17 +33,17 @@ type Message struct {
 }
 
 //Add stores the msg Message within the provided SQL tx
-func (s Outbox) Add(msg Message, tx *sql.Tx) error {
-	newID, _ := uuid.NewUUID()
+func (o Outbox) Add(msg Message, tx *sql.Tx) error {
+	newID := o.uuid.NewUUID()
 	record := Record{
 		ID:          newID,
 		Message:     msg,
 		State:       PendingDelivery,
-		CreatedOn:   time.Now().UTC(),
+		CreatedOn:   o.time.Now().UTC(),
 		LockID:      nil,
 		LockedOn:    nil,
 		ProcessedOn: nil,
 	}
 
-	return s.store.AddRecordTx(record, tx)
+	return o.store.AddRecordTx(record, tx)
 }
