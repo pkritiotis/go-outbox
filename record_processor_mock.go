@@ -11,7 +11,6 @@ type mockRecordProcessor struct {
 }
 
 func (m mockRecordProcessor) processRecords() error {
-	defer m.wg.Done()
 	args := m.Called()
 	return args.Error(0)
 }
