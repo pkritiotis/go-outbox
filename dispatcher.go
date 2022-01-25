@@ -78,18 +78,20 @@ func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan boo
 func (d Dispatcher) runRecordUnlocker(errChan chan<- error, doneChan <-chan bool) {
 	ticker := time.NewTicker(time.Duration(d.settings.LockCheckerIntervalSeconds) * time.Second)
 	for {
+		log.Print("Record Unlocker Running")
+		err := d.recordUnlocker.unlockExpiredMessages()
+		if err != nil {
+			errChan <- err
+		}
+		log.Print("Record Unlocker Finished")
 		select {
+		case <-ticker.C:
+			continue
 		case <-doneChan:
 			ticker.Stop()
 			log.Print("Stopping Record Unlocker")
 			return
-		case <-ticker.C:
-			log.Print("Record Unlocker Running")
-			err := d.recordUnlocker.unlockExpiredMessages()
-			if err != nil {
-				errChan <- err
-			}
-			log.Print("Record Unlocker Finished")
+
 		}
 	}
 }
