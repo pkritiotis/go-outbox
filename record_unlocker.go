@@ -11,8 +11,8 @@ type recordUnlocker struct {
 	MaxLockTimeDurationMins time2.Duration
 }
 
-func newRecordUnlocker(store Store, maxLockTimeDurationMins time2.Duration) *recordUnlocker {
-	return &recordUnlocker{MaxLockTimeDurationMins: maxLockTimeDurationMins, store: store}
+func newRecordUnlocker(store Store, maxLockTimeDurationMins time2.Duration) recordUnlocker {
+	return recordUnlocker{MaxLockTimeDurationMins: maxLockTimeDurationMins, store: store, time: time.NewTimeProvider()}
 }
 
 func (d recordUnlocker) unlockExpiredMessages() error {
