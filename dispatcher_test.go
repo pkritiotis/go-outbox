@@ -97,7 +97,6 @@ func TestDispatcher_Run(t *testing.T) {
 				err = <-tt.errChan
 			}
 			tt.doneChan <- true
-			tt.doneChan <- true
 
 			assert.Equal(t, tt.expError, err)
 		})
