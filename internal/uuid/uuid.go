@@ -2,12 +2,12 @@ package uuid
 
 import "github.com/google/uuid"
 
-// Provider abstracts the uuid generation
+// Provider abstracts the UUID generation
 type Provider interface {
 	NewUUID() uuid.UUID
 }
 
-// NewUUIDProvider constructor that returns default uuid generation
+// NewUUIDProvider constructor that returns default UUID generation
 func NewUUIDProvider() Provider {
 	return uuidProvider{}
 }

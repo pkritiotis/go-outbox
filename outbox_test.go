@@ -22,24 +22,17 @@ func TestNew(t *testing.T) {
 	assert.Equal(t, got, expectedOutbox)
 }
 
-type customTimeProvider struct{ now time.Time }
-
-func (c customTimeProvider) Now() time.Time {
-	return c.now
-}
-
-type customUUIDProvider struct{ uuid uuid.UUID }
-
-func (c customUUIDProvider) NewUUID() uuid.UUID {
-	return c.uuid
-}
-
 func TestOutbox_Add(t *testing.T) {
 	sampleTx := sql.Tx{}
-	sampleUuid, _ := uuid.NewUUID()
+	sampleUUID, _ := uuid.NewUUID()
 	sampleTime := time.Now()
-	timeProvider := customTimeProvider{sampleTime}
-	uuidProvider := customUUIDProvider{sampleUuid}
+
+	timeProvider := &time2.MockProvider{}
+	timeProvider.On("Now").Return(sampleTime)
+
+	uuidProvider := &uuid2.MockProvider{}
+	uuidProvider.On("NewUUID").Return(sampleUUID)
+
 	sampleMessage := Message{
 		Key: "testKey",
 		Headers: []MessageHeader{{
@@ -60,7 +53,7 @@ func TestOutbox_Add(t *testing.T) {
 			store: func() MockStore {
 				mp := MockStore{}
 				or := Record{
-					ID:               sampleUuid,
+					ID:               sampleUUID,
 					Message:          sampleMessage,
 					State:            PendingDelivery,
 					CreatedOn:        sampleTime.UTC(),
@@ -82,7 +75,7 @@ func TestOutbox_Add(t *testing.T) {
 			store: func() MockStore {
 				mp := MockStore{}
 				or := Record{
-					ID:               sampleUuid,
+					ID:               sampleUUID,
 					Message:          sampleMessage,
 					State:            PendingDelivery,
 					CreatedOn:        sampleTime.UTC(),

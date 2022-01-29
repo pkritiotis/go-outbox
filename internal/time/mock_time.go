@@ -11,7 +11,7 @@ type MockProvider struct {
 }
 
 // Now returns the mocked time
-func (m MockProvider) Now() time.Time {
+func (m *MockProvider) Now() time.Time {
 	args := m.Called()
 	return args.Get(0).(time.Time)
 }
