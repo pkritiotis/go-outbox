@@ -10,10 +10,10 @@ import (
 )
 
 func TestDefaultRecordProcessor_newProcessor(t *testing.T) {
-	p := newProcessor(MockStore{}, MockBroker{}, "1", 2)
+	p := newProcessor(&MockStore{}, &MockBroker{}, "1", 2)
 	assert.NotNil(t, p)
-	assert.Equal(t, MockStore{}, p.store)
-	assert.Equal(t, MockBroker{}, p.messageBroker)
+	assert.Equal(t, &MockStore{}, p.store)
+	assert.Equal(t, &MockBroker{}, p.messageBroker)
 	assert.Equal(t, "1", p.machineID)
 	assert.Equal(t, 2, p.MaxSendAttempts)
 }
@@ -41,12 +41,12 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 		expErr          error
 	}{
 		"Eligible records should be processed correctly": {
-			messageBroker: func() MockBroker {
+			messageBroker: func() *MockBroker {
 				mp := MockBroker{}
 				mp.On("Send", sampleMessage).Return((*BrokerError)(nil))
-				return mp
+				return &mp
 			}(),
-			store: func() MockStore {
+			store: func() *MockStore {
 				mp := MockStore{}
 				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).Return(nil)
 				recordsToReturn := []Record{
@@ -72,43 +72,43 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 				recordToStore.ProcessedOn = &sampleTime
 				mp.On("UpdateRecordByID", recordToStore).Return(nil)
 				mp.On("ClearLocksByLockID", machineID).Return(nil)
-				return mp
+				return &mp
 			}(),
 			machineID:       machineID,
 			MaxSendAttempts: 3,
 			expErr:          nil,
 		},
 		"No eligible records should not return an error": {
-			messageBroker: MockBroker{},
-			store: func() MockStore {
+			messageBroker: &MockBroker{},
+			store: func() *MockStore {
 				mp := MockStore{}
 				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).Return(nil)
 				recordsToReturn := []Record{}
 				mp.On("GetRecordsByLockID", machineID).Return(recordsToReturn, nil)
 				mp.On("ClearLocksByLockID", machineID).Return(nil)
-				return mp
+				return &mp
 			}(),
 			machineID:       machineID,
 			MaxSendAttempts: 3,
 			expErr:          nil,
 		},
 		"Error in unlocking should return an error": {
-			messageBroker: MockBroker{},
-			store: func() MockStore {
+			messageBroker: &MockBroker{},
+			store: func() *MockStore {
 				mp := MockStore{}
 				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).
 					Return(errors.New("lock error"))
 				mp.On("ClearLocksByLockID", machineID).Return(nil)
 
-				return mp
+				return &mp
 			}(),
 			machineID:       machineID,
 			MaxSendAttempts: 3,
 			expErr:          errors.New("lock error"),
 		},
 		"Error in record fetching should return an error": {
-			messageBroker: MockBroker{},
-			store: func() MockStore {
+			messageBroker: &MockBroker{},
+			store: func() *MockStore {
 				mp := MockStore{}
 				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).Return(nil)
 				recordsToReturn := []Record{
@@ -129,19 +129,19 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 					Return(recordsToReturn, errors.New("get error"))
 				mp.On("ClearLocksByLockID", machineID).Return(nil)
 
-				return mp
+				return &mp
 			}(),
 			machineID:       machineID,
 			MaxSendAttempts: 3,
 			expErr:          errors.New("get error"),
 		},
 		"Error in Update should return an error": {
-			messageBroker: func() MockBroker {
+			messageBroker: func() *MockBroker {
 				mp := MockBroker{}
 				mp.On("Send", sampleMessage).Return((*BrokerError)(nil))
-				return mp
+				return &mp
 			}(),
-			store: func() MockStore {
+			store: func() *MockStore {
 				mp := MockStore{}
 				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).Return(nil)
 				recordsToReturn := []Record{
@@ -169,19 +169,19 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 					Return(errors.New("update error"))
 				mp.On("ClearLocksByLockID", machineID).Return(nil)
 
-				return mp
+				return &mp
 			}(),
 			machineID:       machineID,
 			MaxSendAttempts: 3,
 			expErr:          errors.New("update error"),
 		},
 		"Error in Clear locks should not return an error": {
-			messageBroker: func() MockBroker {
+			messageBroker: func() *MockBroker {
 				mp := MockBroker{}
 				mp.On("Send", sampleMessage).Return((*BrokerError)(nil))
-				return mp
+				return &mp
 			}(),
-			store: func() MockStore {
+			store: func() *MockStore {
 				mp := MockStore{}
 				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).Return(nil)
 				recordsToReturn := []Record{
@@ -208,22 +208,22 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 				mp.On("UpdateRecordByID", recordToStore).Return(nil)
 				mp.On("ClearLocksByLockID", machineID).
 					Return(errors.New("clear locks error"))
-				return mp
+				return &mp
 			}(),
 			machineID:       machineID,
 			MaxSendAttempts: 3,
 			expErr:          nil,
 		},
 		"Error in broker send should return an error": {
-			messageBroker: func() MockBroker {
+			messageBroker: func() *MockBroker {
 				mp := MockBroker{}
 				mp.On("Send", sampleMessage).Return(&BrokerError{
 					Error: errors.New("broker unavailable"),
 					Type:  BrokerUnavailable,
 				})
-				return mp
+				return &mp
 			}(),
-			store: func() MockStore {
+			store: func() *MockStore {
 				mp := MockStore{}
 				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).Return(nil)
 				recordsToReturn := []Record{
@@ -249,22 +249,22 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 				recordToStore.ProcessedOn = &sampleTime
 				mp.On("UpdateRecordByID", recordToStore).Return(nil)
 				mp.On("ClearLocksByLockID", machineID).Return(nil)
-				return mp
+				return &mp
 			}(),
 			machineID:       machineID,
 			MaxSendAttempts: 3,
 			expErr:          errors.New("broker unavailable"),
 		},
 		"Non availability error in broker should update the record retrial and set the message to pending": {
-			messageBroker: func() MockBroker {
+			messageBroker: func() *MockBroker {
 				mp := MockBroker{}
 				mp.On("Send", sampleMessage).Return(&BrokerError{
 					Error: errors.New("message broker error"),
 					Type:  Other,
 				})
-				return mp
+				return &mp
 			}(),
-			store: func() MockStore {
+			store: func() *MockStore {
 				mp := MockStore{}
 				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).Return(nil)
 				recordsToReturn := []Record{
@@ -291,22 +291,22 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 				recordToStore.NumberOfAttempts++
 				mp.On("UpdateRecordByID", recordToStore).Return(nil)
 				mp.On("ClearLocksByLockID", machineID).Return(nil)
-				return mp
+				return &mp
 			}(),
 			machineID:       machineID,
 			MaxSendAttempts: 3,
 			expErr:          nil,
 		},
 		"Non availability error in broker should update the record retrial and set the message to max retrials reached": {
-			messageBroker: func() MockBroker {
+			messageBroker: func() *MockBroker {
 				mp := MockBroker{}
 				mp.On("Send", sampleMessage).Return(&BrokerError{
 					Error: errors.New("message broker error"),
 					Type:  Other,
 				})
-				return mp
+				return &mp
 			}(),
-			store: func() MockStore {
+			store: func() *MockStore {
 				mp := MockStore{}
 				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).Return(nil)
 				recordsToReturn := []Record{
@@ -333,7 +333,7 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 				recordToStore.NumberOfAttempts++
 				mp.On("UpdateRecordByID", recordToStore).Return(nil)
 				mp.On("ClearLocksByLockID", machineID).Return(nil)
-				return mp
+				return &mp
 			}(),
 			machineID:       machineID,
 			MaxSendAttempts: 3,

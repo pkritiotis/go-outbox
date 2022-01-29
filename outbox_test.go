@@ -50,7 +50,7 @@ func TestOutbox_Add(t *testing.T) {
 	}{
 		"Successful Add Record should return without error": {
 			msg: sampleMessage,
-			store: func() MockStore {
+			store: func() *MockStore {
 				mp := MockStore{}
 				or := Record{
 					ID:               sampleUUID,
@@ -65,14 +65,14 @@ func TestOutbox_Add(t *testing.T) {
 					Error:            nil,
 				}
 				mp.On("AddRecordTx", or, &sampleTx).Return(nil)
-				return mp
+				return &mp
 			}(),
 			tx:     &sampleTx,
 			expErr: nil,
 		},
 		"Failure in Add Record should return error": {
 			msg: sampleMessage,
-			store: func() MockStore {
+			store: func() *MockStore {
 				mp := MockStore{}
 				or := Record{
 					ID:               sampleUUID,
@@ -87,7 +87,7 @@ func TestOutbox_Add(t *testing.T) {
 					Error:            nil,
 				}
 				mp.On("AddRecordTx", or, &sampleTx).Return(errors.New("error"))
-				return mp
+				return &mp
 			}(),
 			tx:     &sampleTx,
 			expErr: errors.New("error"),
