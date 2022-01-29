@@ -12,7 +12,7 @@ func TestDispatcher_Run(t *testing.T) {
 		recordUnlocker  unlocker
 		settings        DispatcherSettings
 		errChan         chan error
-		doneChan        chan bool
+		doneChan        chan struct{}
 		expError        error
 	}{
 		"Should execute processor and unlocker successfully": {
@@ -34,14 +34,14 @@ func TestDispatcher_Run(t *testing.T) {
 				TimeBetweenAttemptsSec:     12,
 			},
 			errChan:  make(chan error),
-			doneChan: make(chan bool),
+			doneChan: make(chan struct{}),
 			expError: nil,
 		},
 		"Error in process records should return error": {
-			recordProcessor: func() mockRecordProcessor {
+			recordProcessor: func() *mockRecordProcessor {
 				mp := mockRecordProcessor{}
 				mp.On("ProcessRecords").Return(errors.New("test"))
-				return mp
+				return &mp
 			}(),
 			recordUnlocker: func() *mockRecordUnlocker {
 				mp := mockRecordUnlocker{}
@@ -56,14 +56,14 @@ func TestDispatcher_Run(t *testing.T) {
 				TimeBetweenAttemptsSec:     12,
 			},
 			errChan:  make(chan error),
-			doneChan: make(chan bool),
+			doneChan: make(chan struct{}),
 			expError: errors.New("test"),
 		},
 		"Error in unlock records should return error": {
-			recordProcessor: func() mockRecordProcessor {
+			recordProcessor: func() *mockRecordProcessor {
 				mp := mockRecordProcessor{}
 				mp.On("ProcessRecords").Return(nil)
-				return mp
+				return &mp
 			}(),
 			recordUnlocker: func() *mockRecordUnlocker {
 				mp := mockRecordUnlocker{}
@@ -78,7 +78,7 @@ func TestDispatcher_Run(t *testing.T) {
 				TimeBetweenAttemptsSec:     12,
 			},
 			errChan:  make(chan error),
-			doneChan: make(chan bool),
+			doneChan: make(chan struct{}),
 			expError: errors.New("test"),
 		},
 	}
@@ -96,7 +96,7 @@ func TestDispatcher_Run(t *testing.T) {
 			if tt.expError != nil {
 				err = <-tt.errChan
 			}
-			tt.doneChan <- true
+			tt.doneChan <- struct{}{}
 
 			assert.Equal(t, tt.expError, err)
 		})
