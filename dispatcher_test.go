@@ -8,8 +8,8 @@ import (
 
 func TestDispatcher_Run(t *testing.T) {
 	tests := map[string]struct {
-		recordProcessor Processor
-		recordUnlocker  Unlocker
+		recordProcessor processor
+		recordUnlocker  unlocker
 		settings        DispatcherSettings
 		errChan         chan error
 		doneChan        chan bool
@@ -18,12 +18,12 @@ func TestDispatcher_Run(t *testing.T) {
 		"Should execute processor and unlocker successfully": {
 			recordProcessor: func() *mockRecordProcessor {
 				mp := mockRecordProcessor{}
-				mp.On("processRecords").Return(nil)
+				mp.On("ProcessRecords").Return(nil)
 				return &mp
 			}(),
 			recordUnlocker: func() *mockRecordUnlocker {
 				mp := mockRecordUnlocker{}
-				mp.On("unlockExpiredMessages").Return(nil)
+				mp.On("UnlockExpiredMessages").Return(nil)
 				return &mp
 			}(),
 			settings: DispatcherSettings{
@@ -40,12 +40,12 @@ func TestDispatcher_Run(t *testing.T) {
 		"Error in process records should return error": {
 			recordProcessor: func() mockRecordProcessor {
 				mp := mockRecordProcessor{}
-				mp.On("processRecords").Return(errors.New("test"))
+				mp.On("ProcessRecords").Return(errors.New("test"))
 				return mp
 			}(),
 			recordUnlocker: func() *mockRecordUnlocker {
 				mp := mockRecordUnlocker{}
-				mp.On("unlockExpiredMessages").Return(nil)
+				mp.On("UnlockExpiredMessages").Return(nil)
 				return &mp
 			}(),
 			settings: DispatcherSettings{
@@ -62,12 +62,12 @@ func TestDispatcher_Run(t *testing.T) {
 		"Error in unlock records should return error": {
 			recordProcessor: func() mockRecordProcessor {
 				mp := mockRecordProcessor{}
-				mp.On("processRecords").Return(nil)
+				mp.On("ProcessRecords").Return(nil)
 				return mp
 			}(),
 			recordUnlocker: func() *mockRecordUnlocker {
 				mp := mockRecordUnlocker{}
-				mp.On("unlockExpiredMessages").Return(errors.New("test"))
+				mp.On("UnlockExpiredMessages").Return(errors.New("test"))
 				return &mp
 			}(),
 			settings: DispatcherSettings{

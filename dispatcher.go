@@ -7,12 +7,12 @@ import (
 
 type ErrorType int
 
-type Processor interface {
-	processRecords() error
+type processor interface {
+	ProcessRecords() error
 }
 
-type Unlocker interface {
-	unlockExpiredMessages() error
+type unlocker interface {
+	UnlockExpiredMessages() error
 }
 
 // DispatcherSettings defines the set of configurations for the dispatcher
@@ -25,8 +25,8 @@ type DispatcherSettings struct {
 }
 
 type Dispatcher struct {
-	recordProcessor Processor
-	recordUnlocker  Unlocker
+	recordProcessor processor
+	recordUnlocker  unlocker
 	settings        DispatcherSettings
 }
 
@@ -66,8 +66,8 @@ func (d Dispatcher) Run(errChan chan<- error, doneChan <-chan bool) {
 func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan struct{}) {
 	ticker := time.NewTicker(time.Duration(d.settings.ProcessIntervalSeconds) * time.Second)
 	for {
-		log.Print("Record Processor Running")
-		err := d.recordProcessor.processRecords()
+		log.Print("Record processor Running")
+		err := d.recordProcessor.ProcessRecords()
 		if err != nil {
 			errChan <- err
 		}
@@ -78,7 +78,7 @@ func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan str
 			continue
 		case <-doneChan:
 			ticker.Stop()
-			log.Print("Stopping Record Processor")
+			log.Print("Stopping Record processor")
 			return
 		}
 	}
@@ -87,18 +87,18 @@ func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan str
 func (d Dispatcher) runRecordUnlocker(errChan chan<- error, doneChan <-chan struct{}) {
 	ticker := time.NewTicker(time.Duration(d.settings.LockCheckerIntervalSeconds) * time.Second)
 	for {
-		log.Print("Record Unlocker Running")
-		err := d.recordUnlocker.unlockExpiredMessages()
+		log.Print("Record unlocker Running")
+		err := d.recordUnlocker.UnlockExpiredMessages()
 		if err != nil {
 			errChan <- err
 		}
-		log.Print("Record Unlocker Finished")
+		log.Print("Record unlocker Finished")
 		select {
 		case <-ticker.C:
 			continue
 		case <-doneChan:
 			ticker.Stop()
-			log.Print("Stopping Record Unlocker")
+			log.Print("Stopping Record unlocker")
 			return
 
 		}

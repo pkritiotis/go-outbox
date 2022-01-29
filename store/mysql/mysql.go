@@ -41,7 +41,7 @@ func NewStore(settings Settings) (*Store, error) {
 }
 
 func (s Store) ClearLocksWithDurationBeforeDate(time time.Time) error {
-	_, err := s.db.Exec(fmt.Sprintf(
+	_, err := s.db.Exec(
 		`UPDATE outbox 
 		SET
 			locked_by=NULL,
@@ -49,7 +49,7 @@ func (s Store) ClearLocksWithDurationBeforeDate(time time.Time) error {
 		WHERE locked_on < ?
 		`,
 		time,
-	))
+	)
 	if err != nil {
 		return err
 	}
@@ -108,15 +108,14 @@ func (s Store) UpdateRecordByID(rec outbox.Record) error {
 }
 
 func (s Store) ClearLocksByLockID(lockID string) error {
-	_, err := s.db.Exec(fmt.Sprintf(
+	_, err := s.db.Exec(
 		`UPDATE outbox 
 		SET 
 			locked_by=NULL,
 			locked_on=NULL
 		WHERE id = ?
 		`,
-		lockID,
-	))
+		lockID)
 	if err != nil {
 		return err
 	}

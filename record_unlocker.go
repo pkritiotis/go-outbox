@@ -15,7 +15,7 @@ func newRecordUnlocker(store Store, maxLockTimeDurationMins time2.Duration) reco
 	return recordUnlocker{MaxLockTimeDurationMins: maxLockTimeDurationMins, store: store, time: time.NewTimeProvider()}
 }
 
-func (d recordUnlocker) unlockExpiredMessages() error {
+func (d recordUnlocker) UnlockExpiredMessages() error {
 	expiryTime := d.time.Now().UTC().Add(-d.MaxLockTimeDurationMins)
 	clearErr := d.store.ClearLocksWithDurationBeforeDate(expiryTime)
 	if clearErr != nil {

@@ -10,7 +10,7 @@ type mockRecordProcessor struct {
 	mock.Mock
 }
 
-func (m mockRecordProcessor) processRecords() error {
+func (m mockRecordProcessor) ProcessRecords() error {
 	args := m.Called()
 	return args.Error(0)
 }
