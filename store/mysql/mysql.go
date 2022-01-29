@@ -8,14 +8,11 @@ import (
 	"time"
 
 	"database/sql"
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/go-sql-driver/mysql" //needed for loading mysql driver
 	"github.com/pkritiotis/outbox"
 )
 
-type Message struct {
-	outbox.Record
-}
-
+//Settings contain the mysql settings
 type Settings struct {
 	MySQLUsername string
 	MySQLPass     string
@@ -24,10 +21,12 @@ type Settings struct {
 	MySQLDB       string
 }
 
+//Store implements a mysql Store
 type Store struct {
 	db *sql.DB
 }
 
+//NewStore constructor
 func NewStore(settings Settings) (*Store, error) {
 	db, err := sql.Open("mysql",
 		fmt.Sprintf("%v:%v@tcp(%v:%v)/%v?parseTime=True",
@@ -40,6 +39,7 @@ func NewStore(settings Settings) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+//ClearLocksWithDurationBeforeDate clears all records with the provided id
 func (s Store) ClearLocksWithDurationBeforeDate(time time.Time) error {
 	_, err := s.db.Exec(
 		`UPDATE outbox 
@@ -56,6 +56,7 @@ func (s Store) ClearLocksWithDurationBeforeDate(time time.Time) error {
 	return nil
 }
 
+//UpdateRecordLockByState updated the lock information based on the state
 func (s Store) UpdateRecordLockByState(lockID string, lockedOn time.Time, state outbox.RecordState) error {
 	_, err := s.db.Exec(
 		`UPDATE outbox 
@@ -74,6 +75,7 @@ func (s Store) UpdateRecordLockByState(lockID string, lockedOn time.Time, state 
 	return nil
 }
 
+//UpdateRecordByID updates the provided record based on its id
 func (s Store) UpdateRecordByID(rec outbox.Record) error {
 	msgData := new(bytes.Buffer)
 	enc := gob.NewEncoder(msgData)
@@ -107,6 +109,7 @@ func (s Store) UpdateRecordByID(rec outbox.Record) error {
 	return nil
 }
 
+//ClearLocksByLockID clears lock information of the records with the provided id
 func (s Store) ClearLocksByLockID(lockID string) error {
 	_, err := s.db.Exec(
 		`UPDATE outbox 
@@ -122,6 +125,7 @@ func (s Store) ClearLocksByLockID(lockID string) error {
 	return nil
 }
 
+//GetRecordsByLockID returns the records of the provided id
 func (s Store) GetRecordsByLockID(lockID string) ([]outbox.Record, error) {
 	rows, err := s.db.Query("SELECT id, data from outbox WHERE locked_by = ?", lockID)
 	if err != nil {
@@ -157,6 +161,7 @@ func (s Store) GetRecordsByLockID(lockID string) ([]outbox.Record, error) {
 	return messages, nil
 }
 
+//AddRecordTx stores the record in the db within the provided transaction tx
 func (s Store) AddRecordTx(rec outbox.Record, tx *sql.Tx) error {
 	msgBuf := new(bytes.Buffer)
 	msgEnc := gob.NewEncoder(msgBuf)

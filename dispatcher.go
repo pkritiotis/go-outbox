@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-type ErrorType int
-
 type processor interface {
 	ProcessRecords() error
 }
@@ -24,12 +22,14 @@ type DispatcherSettings struct {
 	TimeBetweenAttemptsSec     int
 }
 
+//Dispatcher initializes and runs the outbox dispatcher
 type Dispatcher struct {
 	recordProcessor processor
 	recordUnlocker  unlocker
 	settings        DispatcherSettings
 }
 
+//NewDispatcher constructor
 func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSettings, machineID string) *Dispatcher {
 	return &Dispatcher{
 		recordProcessor: newProcessor(
