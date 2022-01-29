@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/Shopify/sarama"
 	"github.com/pkritiotis/outbox"
 	"github.com/pkritiotis/outbox/broker/kafka"
 	"github.com/pkritiotis/outbox/store/mysql"
@@ -27,7 +28,9 @@ func main() {
 	if dbErr != nil {
 		os.Exit(1)
 	}
-	broker := kafka.Broker{}
+	c := sarama.NewConfig()
+	c.Producer.Return.Successes = true
+	broker := kafka.NewBroker([]string{"localhost:9092"}, c)
 	settings := outbox.DispatcherSettings{
 		ProcessIntervalSeconds:     20,
 		LockCheckerIntervalSeconds: 600,
@@ -50,8 +53,9 @@ func main() {
 	tx.Commit()
 	s := outbox.NewDispatcher(store, broker, settings, "1")
 	errChan := make(chan error)
-	doneChan := make(chan bool)
+	doneChan := make(chan struct{})
 	s.Run(errChan, doneChan)
+	defer func() { doneChan <- struct{}{} }()
 	err := <-errChan
 	fmt.Printf(err.Error())
 }
