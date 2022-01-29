@@ -5,13 +5,13 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockProvider mocks uuid provider
+// MockProvider mocks UUID provider
 type MockProvider struct {
 	mock.Mock
 }
 
-// NewUUID returns the mocked uuid
-func (m MockProvider) NewUUID() uuid.UUID {
+// NewUUID returns the mocked UUID
+func (m *MockProvider) NewUUID() uuid.UUID {
 	args := m.Called()
 	return args.Get(0).(uuid.UUID)
 }

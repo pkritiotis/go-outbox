@@ -10,7 +10,8 @@ import (
 
 func Test_recordUnlocker_unlockExpiredMessages(t *testing.T) {
 	sampleTime := time2.Now().UTC()
-	timeProvider := customTimeProvider{sampleTime}
+	timeProvider := &time.MockProvider{}
+	timeProvider.On("Now").Return(sampleTime)
 
 	tests := map[string]struct {
 		store                   Store

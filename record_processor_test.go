@@ -3,6 +3,7 @@ package outbox
 import (
 	"errors"
 	"github.com/google/uuid"
+	time2 "github.com/pkritiotis/outbox/internal/time"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
@@ -19,7 +20,8 @@ func TestDefaultRecordProcessor_newProcessor(t *testing.T) {
 
 func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 	sampleTime := time.Now().UTC()
-	timeProvider := customTimeProvider{sampleTime}
+	timeProvider := &time2.MockProvider{}
+	timeProvider.On("Now").Return(sampleTime)
 
 	sampleMessage := Message{
 		Key: "testKey",
