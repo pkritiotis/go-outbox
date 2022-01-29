@@ -8,7 +8,7 @@ type mockRecordUnlocker struct {
 	mock.Mock
 }
 
-func (m *mockRecordUnlocker) unlockExpiredMessages() error {
+func (m *mockRecordUnlocker) UnlockExpiredMessages() error {
 	args := m.Called()
 	return args.Error(0)
 }

@@ -47,7 +47,7 @@ func Test_recordUnlocker_unlockExpiredMessages(t *testing.T) {
 				time:                    tt.time,
 				MaxLockTimeDurationMins: tt.MaxLockTimeDurationMins,
 			}
-			err := d.unlockExpiredMessages()
+			err := d.UnlockExpiredMessages()
 			assert.Equal(t, tt.expErr, err)
 		})
 	}

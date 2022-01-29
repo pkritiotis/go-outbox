@@ -25,8 +25,9 @@ func newProcessor(store Store, messageBroker MessageBroker, machineID string, ma
 }
 
 //ProcessRecords locks unprocessed messages, tries to deliver them and then unlocks them
-func (d defaultRecordProcessor) processRecords() error {
+func (d defaultRecordProcessor) ProcessRecords() error {
 	err := d.lockUnprocessedEntities()
+	defer d.store.ClearLocksByLockID(d.machineID)
 	if err != nil {
 		return err
 	}
@@ -38,7 +39,6 @@ func (d defaultRecordProcessor) processRecords() error {
 		return nil
 	}
 	err = d.publishMessages(records)
-	_ = d.store.ClearLocksByLockID(d.machineID)
 
 	if err != nil {
 		return err
