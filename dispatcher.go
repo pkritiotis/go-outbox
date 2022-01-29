@@ -49,12 +49,21 @@ func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSetting
 //Run periodically checks for new outbox messages from the Store, sends the messages through the MessageBroker
 //and updates the message status accordingly
 func (d Dispatcher) Run(errChan chan<- error, doneChan <-chan bool) {
-	go d.runRecordProcessor(errChan, doneChan)
-	go d.runRecordUnlocker(errChan, doneChan)
+	doneProc := make(chan struct{}, 1)
+	doneUnlock := make(chan struct{}, 1)
+
+	go func() {
+		<-doneChan
+		doneProc <- struct{}{}
+		doneUnlock <- struct{}{}
+	}()
+
+	go d.runRecordProcessor(errChan, doneProc)
+	go d.runRecordUnlocker(errChan, doneUnlock)
 }
 
 // runRecordProcessor processes the unsent records of the store
-func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan bool) {
+func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan struct{}) {
 	ticker := time.NewTicker(time.Duration(d.settings.ProcessIntervalSeconds) * time.Second)
 	for {
 		log.Print("Record Processor Running")
@@ -75,7 +84,7 @@ func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan boo
 	}
 }
 
-func (d Dispatcher) runRecordUnlocker(errChan chan<- error, doneChan <-chan bool) {
+func (d Dispatcher) runRecordUnlocker(errChan chan<- error, doneChan <-chan struct{}) {
 	ticker := time.NewTicker(time.Duration(d.settings.LockCheckerIntervalSeconds) * time.Second)
 	for {
 		log.Print("Record Unlocker Running")
