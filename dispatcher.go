@@ -48,7 +48,7 @@ func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSetting
 
 //Run periodically checks for new outbox messages from the Store, sends the messages through the MessageBroker
 //and updates the message status accordingly
-func (d Dispatcher) Run(errChan chan<- error, doneChan <-chan bool) {
+func (d Dispatcher) Run(errChan chan<- error, doneChan <-chan struct{}) {
 	doneProc := make(chan struct{}, 1)
 	doneUnlock := make(chan struct{}, 1)
 
