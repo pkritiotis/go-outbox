@@ -31,7 +31,6 @@ func NewStore(settings Settings) (*Store, error) {
 	db, err := sql.Open("mysql",
 		fmt.Sprintf("%v:%v@tcp(%v:%v)/%v?parseTime=True",
 			settings.MySQLUsername, settings.MySQLPass, settings.MySQLHost, settings.MySQLPort, settings.MySQLDB))
-
 	if err != nil || db.Ping() != nil {
 		log.Fatalf("failed to connect to database %v", err)
 		return nil, err
@@ -45,7 +44,7 @@ func (s Store) ClearLocksWithDurationBeforeDate(time time.Time) error {
 		`UPDATE outbox 
 		SET
 			locked_by=NULL,
-			locked_on=NULL,
+			locked_on=NULL
 		WHERE locked_on < ?
 		`,
 		time,
@@ -147,7 +146,6 @@ func (s Store) GetRecordsByLockID(lockID string) ([]outbox.Record, error) {
 			}
 			return messages, err
 		}
-
 		decErr := gob.NewDecoder(bytes.NewReader(data)).Decode(&rec.Message)
 		if decErr != nil {
 			return nil, decErr

@@ -19,7 +19,7 @@ type A struct {
 func main() {
 	sqlSettings := mysql.Settings{
 		MySQLUsername: "root",
-		MySQLPass:     "my-secret-pw",
+		MySQLPass:     "a123456",
 		MySQLHost:     "localhost",
 		MySQLDB:       "outbox",
 		MySQLPort:     "3306",
@@ -30,7 +30,7 @@ func main() {
 	}
 	c := sarama.NewConfig()
 	c.Producer.Return.Successes = true
-	broker := kafka.NewBroker([]string{"localhost:9092"}, c)
+	broker := kafka.NewBroker([]string{"localhost:29092"}, c)
 	settings := outbox.DispatcherSettings{
 		ProcessIntervalSeconds:     20,
 		LockCheckerIntervalSeconds: 600,
