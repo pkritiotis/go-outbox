@@ -36,9 +36,12 @@ jobs:
           COLOR=orange
         fi
         curl "https://img.shields.io/badge/coverage-$total%25-$COLOR" > doc/graphics/code-coverage-badge.svg
+        
+        git remote set-url origin git@github.com:pkritiotis/go-outbox.git
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+        
         git add doc/graphics/code-coverage-badge.svg
         git commit -m "Update test coverage badge"
         git push origin HEAD:${{ github.head_ref }}
