@@ -35,11 +35,11 @@ jobs:
         else
           COLOR=orange
         fi
-        curl "https://img.shields.io/badge/coverage-$total%25-$COLOR" > code-coverage-badge.svg
-        
-    - name: Archive code coverage badge
-      uses: actions/upload-artifact@v2
-      with:
-        name: badge.svg
-        path: code-coverage-badge.svg
+        curl "https://img.shields.io/badge/coverage-$total%25-$COLOR" > doc/graphics/code-coverage-badge.svg
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+        git add doc/graphics/code-coverage-badge.svg
+        git commit -m "Update test coverage badge"
+        git push
      
