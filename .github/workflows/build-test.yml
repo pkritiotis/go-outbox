@@ -35,7 +35,7 @@ jobs:
         else
           COLOR=orange
         fi
-        curl "https://img.shields.io/badge/coverage-$total%25-$COLOR" > badge.svg
+        curl "https://img.shields.io/badge/coverage-$total%25-$COLOR" > code-coverage-badge.svg
         
     - name: Archive code coverage badge
       uses: actions/upload-artifact@v2
