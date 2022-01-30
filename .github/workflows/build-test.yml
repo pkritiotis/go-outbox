@@ -41,11 +41,11 @@ jobs:
         git config --global user.email "pkritiotis@users.noreply.github.com"
         git pull origin ${{ github.head_ref }} --rebase
         
-        git add doc/graphics/code-coverage-badge.svg
-        git commit -m "Update test coverage badge"
-        
         gstatus=`git status --porcelain | sed "s/\"/'/g"`
+        
         if [[ "$gstatus" != "" ]] ;then
+          git add doc/graphics/code-coverage-badge.svg
+          git commit -m "Update test coverage badge"
           git push origin HEAD:${{ github.head_ref }}
         fi
      
