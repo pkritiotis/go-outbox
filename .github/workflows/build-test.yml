@@ -24,6 +24,11 @@ jobs:
     - name: Test
       run: go test -v ./...
       
+    - name: Extract branch name
+      shell: bash
+      run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+      id: extract_branch
+      
     - name: Publish cod coverage badge
       run: |
         set -x
@@ -41,5 +46,5 @@ jobs:
 
         git add doc/graphics/code-coverage-badge.svg
         git commit -m "Update test coverage badge"
-        git push origin ${{github.ref}}
+        git push origin ${{ steps.extract_branch.outputs.branch }}
      
