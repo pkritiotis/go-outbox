@@ -41,5 +41,5 @@ jobs:
 
         git add doc/graphics/code-coverage-badge.svg
         git commit -m "Update test coverage badge"
-        git push
+        git push origin main
      
