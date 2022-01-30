@@ -43,5 +43,9 @@ jobs:
         
         git add doc/graphics/code-coverage-badge.svg
         git commit -m "Update test coverage badge"
-        git push origin HEAD:${{ github.head_ref }}
+        
+        gstatus=`git status --porcelain | sed "s/\"/'/g"`
+        if [[ "$gstatus" != "" ]] ;then
+          git push origin HEAD:${{ github.head_ref }}
+        fi
      
