@@ -23,3 +23,23 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+      
+    - name: Publish cod coverage badge
+      run:
+        set -x
+        total=`go tool cover -func=coverage.out | grep total | grep -Eo '[0-9]+\.[0-9]+'`
+        if (( $(echo "$total <= 50" | bc -l) )) ; then
+          COLOR=red
+        elif (( $(echo "$total > 80" | bc -l) )); then
+          COLOR=green
+        else
+          COLOR=orange
+        fi
+        curl "https://img.shields.io/badge/coverage-$total%25-$COLOR" > badge.svg
+        
+    - name: Archive code coverage badge
+      uses: actions/upload-artifact@v2
+      with:
+        name: badge.svg
+        path: doc/graphics/code-coverage-badge.svg
+     
