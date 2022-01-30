@@ -1,0 +1,45 @@
+name: Code Coverage Badge
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.16
+
+    - name: Build
+      run: go build -v ./...
+
+    - name: Publish code coverage badge
+      run: |
+        set -x
+        total=`go test -coverprofile=coverage.out | grep coverage | grep -Eo '[0-9]+\.[0-9]+'`
+        if (( $(echo "$total <= 50" | bc -l) )) ; then
+          COLOR=red
+        elif (( $(echo "$total > 80" | bc -l) )); then
+          COLOR=green
+        else
+          COLOR=orange
+        fi
+        curl "https://img.shields.io/badge/coverage-$total%25-$COLOR" > doc/graphics/code-coverage-badge.svg
+        
+        git config --global user.name "Panayiotis Kritiotis"
+        git config --global user.email "pkritiotis@users.noreply.github.com"
+        git pull origin ${{ github.head_ref }} --rebase
+        
+        gstatus=`git status --porcelain | sed "s/\"/'/g"`
+        
+        if [[ "$gstatus" != "" ]] ;then
+          git add doc/graphics/code-coverage-badge.svg
+          git commit -m "Update test coverage badge"
+          git push origin HEAD:${{ github.head_ref }}
+        fi
