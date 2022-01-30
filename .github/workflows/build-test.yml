@@ -41,5 +41,5 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: badge.svg
-        path: doc/graphics/code-coverage-badge.svg
+        path: code-coverage-badge.svg
      
