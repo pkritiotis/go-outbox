@@ -24,13 +24,18 @@ func main() {
 		MySQLDB:       "outbox",
 		MySQLPort:     "3306",
 	}
-	store, dbErr := mysql.NewStore(sqlSettings)
-	if dbErr != nil {
+	store, err := mysql.NewStore(sqlSettings)
+	if err != nil {
+		fmt.Sprintf("Could not initialize the store: %v", err)
 		os.Exit(1)
 	}
 	c := sarama.NewConfig()
 	c.Producer.Return.Successes = true
-	broker := kafka.NewBroker([]string{"localhost:29092"}, c)
+	broker, err := kafka.NewBroker([]string{"localhost:29092"}, c)
+	if err != nil {
+		fmt.Sprintf("Could not initialize the message broker: %v", err)
+		os.Exit(1)
+	}
 	settings := outbox.DispatcherSettings{
 		ProcessIntervalSeconds:     20,
 		LockCheckerIntervalSeconds: 600,
@@ -56,6 +61,6 @@ func main() {
 	doneChan := make(chan struct{})
 	s.Run(errChan, doneChan)
 	defer func() { doneChan <- struct{}{} }()
-	err := <-errChan
+	err = <-errChan
 	fmt.Printf(err.Error())
 }
