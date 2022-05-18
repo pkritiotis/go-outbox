@@ -15,11 +15,11 @@ type unlocker interface {
 
 // DispatcherSettings defines the set of configurations for the dispatcher
 type DispatcherSettings struct {
-	ProcessIntervalSeconds     int
-	LockCheckerIntervalSeconds int
-	MaxLockTimeDurationMins    int
-	MaxSendAttempts            int
-	TimeBetweenAttemptsSec     int
+	ProcessInterval     time.Duration
+	LockCheckerInterval time.Duration
+	MaxLockTimeDuration time.Duration
+	MaxSendAttempts     int
+	TimeBetweenAttempts int
 }
 
 //Dispatcher initializes and runs the outbox dispatcher
@@ -40,7 +40,7 @@ func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSetting
 		),
 		recordUnlocker: newRecordUnlocker(
 			store,
-			time.Duration(settings.MaxLockTimeDurationMins)*time.Minute,
+			time.Duration(settings.MaxLockTimeDuration)*time.Minute,
 		),
 		settings: settings,
 	}
@@ -64,7 +64,7 @@ func (d Dispatcher) Run(errChan chan<- error, doneChan <-chan struct{}) {
 
 // runRecordProcessor processes the unsent records of the store
 func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan struct{}) {
-	ticker := time.NewTicker(time.Duration(d.settings.ProcessIntervalSeconds) * time.Second)
+	ticker := time.NewTicker(time.Duration(d.settings.ProcessInterval) * time.Second)
 	for {
 		log.Print("Record processor Running")
 		err := d.recordProcessor.ProcessRecords()
@@ -85,7 +85,7 @@ func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan str
 }
 
 func (d Dispatcher) runRecordUnlocker(errChan chan<- error, doneChan <-chan struct{}) {
-	ticker := time.NewTicker(time.Duration(d.settings.LockCheckerIntervalSeconds) * time.Second)
+	ticker := time.NewTicker(time.Duration(d.settings.LockCheckerInterval) * time.Second)
 	for {
 		log.Print("Record unlocker Running")
 		err := d.recordUnlocker.UnlockExpiredMessages()
