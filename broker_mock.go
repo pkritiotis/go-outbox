@@ -8,7 +8,7 @@ type MockBroker struct {
 }
 
 //Send method mock
-func (m *MockBroker) Send(message Message) *BrokerError {
+func (m *MockBroker) Send(message Message) error {
 	args := m.Called(message)
-	return args.Get(0).(*BrokerError)
+	return args.Error(0)
 }

@@ -12,7 +12,7 @@ func TestBroker_Send(t *testing.T) {
 		broker *sarama.MockBroker
 		config *sarama.Config
 		event  outbox.Message
-		expErr *outbox.BrokerError
+		expErr error
 	}{
 		"Unsuccessful delivery should return error": {
 			broker: func() *sarama.MockBroker {
@@ -38,50 +38,47 @@ func TestBroker_Send(t *testing.T) {
 				Body:    sarama.ByteEncoder("testing"),
 				Topic:   "sampleTopic",
 			},
-			expErr: &outbox.BrokerError{
-				Error: sarama.ErrInsufficientData,
-				Type:  outbox.Other,
-			},
+			expErr: sarama.ErrInsufficientData,
 		},
 	}
 	for name, test := range tests {
 		tt := test
 		t.Run(name, func(t *testing.T) {
 			defer tt.broker.Close()
+			producer, err := sarama.NewSyncProducer([]string{tt.broker.Addr()}, tt.config)
+			assert.Nil(t, err)
 			b := Broker{
-				brokers: []string{tt.broker.Addr()},
-				config:  tt.config,
+				producer: producer,
 			}
-			err := b.Send(tt.event)
+			err = b.Send(tt.event)
 			assert.Equal(t, tt.expErr, err)
 
 		})
 	}
 }
 
-func TestBroker_Send_ProducerError(t *testing.T) {
-	b := NewBroker([]string{}, sarama.NewConfig())
-	err := b.Send(outbox.Message{
-		Key:     "etst",
-		Headers: nil,
-		Body:    []byte("test"),
-		Topic:   "testTopic",
-	})
+func TestNewBroker_error(t *testing.T) {
+	expErr := sarama.ConfigurationError("You must provide at least one broker address")
 
-	expErr := &outbox.BrokerError{
-		Error: sarama.ConfigurationError("You must provide at least one broker address"),
-		Type:  outbox.BrokerUnavailable,
-	}
+	b, err := NewBroker([]string{}, sarama.NewConfig())
 
+	assert.Nil(t, b)
 	assert.Equal(t, expErr, err)
 }
-func TestNewBroker(t *testing.T) {
+
+func TestNewBroker_success(t *testing.T) {
+	mp := sarama.NewMockBroker(t, 1)
+	mp.SetHandlerByMap(map[string]sarama.MockResponse{
+		"MetadataRequest": sarama.NewMockMetadataResponse(t).
+			SetBroker(mp.Addr(), mp.BrokerID()).
+			SetLeader("sampleTopic", 0, mp.BrokerID()),
+		"ProduceRequest": sarama.NewMockProduceResponse(t),
+	})
 	conf := sarama.NewConfig()
-	brokers := []string{"localhost:9092"}
+	brokers := []string{mp.Addr()}
 
-	b := NewBroker(brokers, conf)
+	b, err := NewBroker(brokers, conf)
 
+	assert.Nil(t, err)
 	assert.NotNil(t, b)
-	assert.Equal(t, brokers, b.brokers)
-	assert.Equal(t, conf, b.config)
 }
