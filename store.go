@@ -34,7 +34,7 @@ const (
 
 //Store is the interface that should be implemented by SQL-like database drivers to support the outbox functionality
 type Store interface {
-	//AddRecordTx stores the message within the database
+	//AddRecordTx stores the message within the provided database transaction
 	AddRecordTx(record Record, tx *sql.Tx) error
 	//GetRecordsByLockID returns the records by lockID
 	GetRecordsByLockID(lockID string) ([]Record, error)
