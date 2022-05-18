@@ -1,6 +1,7 @@
 package outbox
 
 import (
+	"fmt"
 	"github.com/pkritiotis/outbox/internal/time"
 )
 
@@ -38,12 +39,8 @@ func (d defaultRecordProcessor) ProcessRecords() error {
 	if len(records) == 0 {
 		return nil
 	}
-	err = d.publishMessages(records)
 
-	if err != nil {
-		return err
-	}
-	return nil
+	return d.publishMessages(records)
 }
 
 func (d defaultRecordProcessor) publishMessages(records []Record) error {
@@ -53,25 +50,23 @@ func (d defaultRecordProcessor) publishMessages(records []Record) error {
 		now := d.time.Now().UTC()
 		rec.LastAttemptOn = &now
 		rec.NumberOfAttempts++
-		brokerErr := d.messageBroker.Send(rec.Message)
+		err := d.messageBroker.Send(rec.Message)
 
-		// If an error occurs, remove lock information, update retrial times and continue
-		if brokerErr != nil {
-			// if the error is because of broker availability there is no reason to process the rest of the messages now - retry later
-			if brokerErr.Type == BrokerUnavailable {
-				return brokerErr.Error
-			}
-
+		// If an error occurs, remove the lock information, update retrial times and continue
+		if err != nil {
 			rec.LockedOn = nil
 			rec.LockID = nil
-			errorMsg := brokerErr.Error.Error()
+			errorMsg := err.Error()
 			rec.Error = &errorMsg
 			if rec.NumberOfAttempts == d.MaxSendAttempts {
 				rec.State = MaxAttemptsReached
 			}
-			_ = d.store.UpdateRecordByID(rec)
+			dbErr := d.store.UpdateRecordByID(rec)
+			if dbErr != nil {
+				return fmt.Errorf("Could not update the record in the db: %w", dbErr)
+			}
 
-			continue
+			return fmt.Errorf("An error occurred when trying to send the message to the broker: %w", err)
 		}
 
 		// Remove lock information and update state
@@ -79,10 +74,10 @@ func (d defaultRecordProcessor) publishMessages(records []Record) error {
 		rec.LockedOn = nil
 		rec.LockID = nil
 		rec.ProcessedOn = &now
-		err := d.store.UpdateRecordByID(rec)
+		err = d.store.UpdateRecordByID(rec)
 
 		if err != nil {
-			return err
+			return fmt.Errorf("Could not update the record in the db: %w", err)
 		}
 	}
 	return nil
