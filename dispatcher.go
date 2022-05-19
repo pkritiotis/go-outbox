@@ -19,7 +19,6 @@ type DispatcherSettings struct {
 	LockCheckerInterval time.Duration
 	MaxLockTimeDuration time.Duration
 	MaxSendAttempts     int
-	TimeBetweenAttempts int
 }
 
 //Dispatcher initializes and runs the outbox dispatcher
