@@ -13,6 +13,7 @@ type unlocker interface {
 	UnlockExpiredMessages() error
 }
 
+// RetrialPolicy contains the retrial settings
 type RetrialPolicy struct {
 	MaxSendAttemptsEnabled bool
 	MaxSendAttempts        int
