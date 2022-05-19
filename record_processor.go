@@ -7,21 +7,21 @@ import (
 
 //defaultRecordProcessor checks and dispatches new messages to be sent
 type defaultRecordProcessor struct {
-	messageBroker   MessageBroker
-	store           Store
-	time            time.Provider
-	machineID       string
-	MaxSendAttempts int
+	messageBroker MessageBroker
+	store         Store
+	time          time.Provider
+	machineID     string
+	retrialPolicy RetrialPolicy
 }
 
 //newProcessor constructs a new defaultRecordProcessor
-func newProcessor(store Store, messageBroker MessageBroker, machineID string, maxSendAttempts int) *defaultRecordProcessor {
+func newProcessor(store Store, messageBroker MessageBroker, machineID string, retrialPolicy RetrialPolicy) *defaultRecordProcessor {
 	return &defaultRecordProcessor{
-		messageBroker:   messageBroker,
-		store:           store,
-		time:            time.NewTimeProvider(),
-		machineID:       machineID,
-		MaxSendAttempts: maxSendAttempts,
+		messageBroker: messageBroker,
+		store:         store,
+		time:          time.NewTimeProvider(),
+		machineID:     machineID,
+		retrialPolicy: retrialPolicy,
 	}
 }
 
@@ -58,7 +58,7 @@ func (d defaultRecordProcessor) publishMessages(records []Record) error {
 			rec.LockID = nil
 			errorMsg := err.Error()
 			rec.Error = &errorMsg
-			if rec.NumberOfAttempts == d.MaxSendAttempts {
+			if d.retrialPolicy.MaxSendAttemptsEnabled && rec.NumberOfAttempts == d.retrialPolicy.MaxSendAttempts {
 				rec.State = MaxAttemptsReached
 			}
 			dbErr := d.store.UpdateRecordByID(rec)

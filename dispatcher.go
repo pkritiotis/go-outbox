@@ -13,12 +13,17 @@ type unlocker interface {
 	UnlockExpiredMessages() error
 }
 
+type RetrialPolicy struct {
+	MaxSendAttemptsEnabled bool
+	MaxSendAttempts        int
+}
+
 // DispatcherSettings defines the set of configurations for the dispatcher
 type DispatcherSettings struct {
 	ProcessInterval     time.Duration
 	LockCheckerInterval time.Duration
 	MaxLockTimeDuration time.Duration
-	MaxSendAttempts     int
+	RetrialPolicy       RetrialPolicy
 }
 
 //Dispatcher initializes and runs the outbox dispatcher
@@ -35,7 +40,7 @@ func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSetting
 			store,
 			broker,
 			machineID,
-			settings.MaxSendAttempts,
+			settings.RetrialPolicy,
 		),
 		recordUnlocker: newRecordUnlocker(
 			store,
