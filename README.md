@@ -131,9 +131,3 @@ func main() {
 }
 
 ```
-# Developer's Handbook
-
-## Design
-### Diagram
-### Introducing a new message broker
-### Introducing a new data strore provider
