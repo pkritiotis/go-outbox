@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/stretchr/testify/assert"
 	"testing"
+	"time"
 )
 
 func TestDispatcher_Run(t *testing.T) {
@@ -27,11 +28,13 @@ func TestDispatcher_Run(t *testing.T) {
 				return &mp
 			}(),
 			settings: DispatcherSettings{
-				ProcessIntervalSeconds:     1,
-				LockCheckerIntervalSeconds: 1,
-				MaxLockTimeDurationMins:    1,
-				MaxSendAttempts:            12,
-				TimeBetweenAttemptsSec:     12,
+				ProcessInterval:     1 * time.Minute,
+				LockCheckerInterval: 1 * time.Minute,
+				MaxLockTimeDuration: 1 * time.Minute,
+				RetrialPolicy: RetrialPolicy{
+					MaxSendAttemptsEnabled: true,
+					MaxSendAttempts:        12,
+				},
 			},
 			errChan:  make(chan error),
 			doneChan: make(chan struct{}),
@@ -49,11 +52,13 @@ func TestDispatcher_Run(t *testing.T) {
 				return &mp
 			}(),
 			settings: DispatcherSettings{
-				ProcessIntervalSeconds:     1,
-				LockCheckerIntervalSeconds: 1,
-				MaxLockTimeDurationMins:    1,
-				MaxSendAttempts:            12,
-				TimeBetweenAttemptsSec:     12,
+				ProcessInterval:     1,
+				LockCheckerInterval: 1,
+				MaxLockTimeDuration: 1,
+				RetrialPolicy: RetrialPolicy{
+					MaxSendAttemptsEnabled: true,
+					MaxSendAttempts:        12,
+				},
 			},
 			errChan:  make(chan error),
 			doneChan: make(chan struct{}),
@@ -71,11 +76,13 @@ func TestDispatcher_Run(t *testing.T) {
 				return &mp
 			}(),
 			settings: DispatcherSettings{
-				ProcessIntervalSeconds:     1,
-				LockCheckerIntervalSeconds: 1,
-				MaxLockTimeDurationMins:    1,
-				MaxSendAttempts:            12,
-				TimeBetweenAttemptsSec:     12,
+				ProcessInterval:     1,
+				LockCheckerInterval: 1,
+				MaxLockTimeDuration: 1,
+				RetrialPolicy: RetrialPolicy{
+					MaxSendAttemptsEnabled: true,
+					MaxSendAttempts:        12,
+				},
 			},
 			errChan:  make(chan error),
 			doneChan: make(chan struct{}),

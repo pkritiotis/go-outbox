@@ -10,6 +10,7 @@ import (
 	"github.com/pkritiotis/outbox/broker/kafka"
 	"github.com/pkritiotis/outbox/store/mysql"
 	"os"
+	"time"
 )
 
 type A struct {
@@ -37,9 +38,9 @@ func main() {
 		os.Exit(1)
 	}
 	settings := outbox.DispatcherSettings{
-		ProcessIntervalSeconds:     20,
-		LockCheckerIntervalSeconds: 600,
-		MaxLockTimeDurationMins:    5,
+		ProcessInterval:     20 * time.Minute,
+		LockCheckerInterval: 600 * time.Minute,
+		MaxLockTimeDuration: 5 * time.Minute,
 	}
 	repo := outbox.New(store)
 
