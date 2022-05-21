@@ -22,7 +22,8 @@ This project provides an implementation of the Transactional Outbox Pattern in G
 
 # Usage
 ## Create the outbox table
-```sql
+The following script creates the outbox table in mySQL
+```mysql
 CREATE TABLE outbox (
         id varchar(100) NOT NULL,
         data BLOB NOT NULL,
@@ -36,7 +37,7 @@ CREATE TABLE outbox (
         error varchar(1000) NULL
 )
 ```
-## Send a message via the outbox
+## Send a message via the outbox service
 ```go
 
 type SampleMessage struct {
@@ -83,7 +84,7 @@ func main() {
 }
 
 ```
-## Start the dispatcher
+## Start the outbox dispatcher
 The dispatcher can run on the same or different instance of the applicatin that uses the outbox.
 ```go
 func main() {
