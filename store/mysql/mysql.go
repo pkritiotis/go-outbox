@@ -168,7 +168,7 @@ func (s Store) AddRecordTx(rec outbox.Record, tx *sql.Tx) error {
 	if encErr != nil {
 		return encErr
 	}
-	q := "INSERT INTO outbox (id, data, state, created_on,locked_by,locked_on,processed_on) VALUES (?,?,?,?,?,?,?)"
+	q := "INSERT INTO outbox (id, data, state, created_on,locked_by,locked_on,processed_on,number_of_attempts,last_attempted_on,error) VALUES (?,?,?,?,?,?,?,?,?,?)"
 
 	_, err := tx.Exec(q,
 		rec.ID,
@@ -177,7 +177,10 @@ func (s Store) AddRecordTx(rec outbox.Record, tx *sql.Tx) error {
 		rec.CreatedOn,
 		rec.LockID,
 		rec.LockedOn,
-		rec.ProcessedOn)
+		rec.ProcessedOn,
+		rec.NumberOfAttempts,
+		rec.LastAttemptOn,
+		rec.Error)
 	if err != nil {
 		return err
 	}
