@@ -45,7 +45,7 @@ func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSetting
 		),
 		recordUnlocker: newRecordUnlocker(
 			store,
-			time.Duration(settings.MaxLockTimeDuration)*time.Minute,
+			settings.MaxLockTimeDuration,
 		),
 		settings: settings,
 	}
@@ -69,7 +69,7 @@ func (d Dispatcher) Run(errChan chan<- error, doneChan <-chan struct{}) {
 
 // runRecordProcessor processes the unsent records of the store
 func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan struct{}) {
-	ticker := time.NewTicker(time.Duration(d.settings.ProcessInterval) * time.Second)
+	ticker := time.NewTicker(d.settings.ProcessInterval)
 	for {
 		log.Print("Record processor Running")
 		err := d.recordProcessor.ProcessRecords()
@@ -90,7 +90,7 @@ func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan str
 }
 
 func (d Dispatcher) runRecordUnlocker(errChan chan<- error, doneChan <-chan struct{}) {
-	ticker := time.NewTicker(time.Duration(d.settings.LockCheckerInterval) * time.Second)
+	ticker := time.NewTicker(d.settings.LockCheckerInterval)
 	for {
 		log.Print("Record unlocker Running")
 		err := d.recordUnlocker.UnlockExpiredMessages()
