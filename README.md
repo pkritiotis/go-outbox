@@ -21,6 +21,9 @@ This project provides an implementation of the Transactional Outbox Pattern in G
 - MySQL
 
 # Usage
+
+For a full example of a mySQL outbox using a Kafka broker check the example [here](./examples/mySQL-Kafka/)
+
 ## Create the outbox table
 The following script creates the outbox table in mySQL
 ```mysql
