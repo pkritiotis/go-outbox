@@ -279,7 +279,49 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 			},
 			expErr: fmt.Errorf("An error occurred when trying to send the message to the broker: %w", errors.New("message broker error")),
 		},
-		"Error in broker with retrial disabled send should change the state and return an error": {
+		"Error in broker and subsequent error in update should return an error": {
+			messageBroker: func() *MockBroker {
+				mp := MockBroker{}
+				mp.On("Send", sampleMessage).Return(errors.New("message broker error"))
+				return &mp
+			}(),
+			store: func() *MockStore {
+				mp := MockStore{}
+				mp.On("UpdateRecordLockByState", machineID, sampleTime, PendingDelivery).Return(nil)
+				recordsToReturn := []Record{
+					{
+						ID:               uuid.New(),
+						Message:          sampleMessage,
+						State:            PendingDelivery,
+						CreatedOn:        time.Now(),
+						LockID:           &machineID,
+						LockedOn:         nil,
+						ProcessedOn:      nil,
+						NumberOfAttempts: 0,
+						LastAttemptOn:    nil,
+						Error:            nil,
+					},
+				}
+				mp.On("GetRecordsByLockID", machineID).Return(recordsToReturn, nil)
+				recordToStore := recordsToReturn[0]
+				recordToStore.State = PendingDelivery
+				recordToStore.LastAttemptOn = &sampleTime
+				recordToStore.LockID = nil
+				recordToStore.NumberOfAttempts++
+				errMsg := "message broker error"
+				recordToStore.Error = &errMsg
+				mp.On("UpdateRecordByID", recordToStore).Return(errors.New("db error"))
+				mp.On("ClearLocksByLockID", machineID).Return(nil)
+				return &mp
+			}(),
+			machineID: machineID,
+			retrialPolicy: RetrialPolicy{
+				MaxSendAttemptsEnabled: false,
+				MaxSendAttempts:        3,
+			},
+			expErr: fmt.Errorf("Could not update the record in the db: %w", errors.New("db error")),
+		},
+		"Error in broker with retrial enabled send should change the state and return an error": {
 			messageBroker: func() *MockBroker {
 				mp := MockBroker{}
 				mp.On("Send", sampleMessage).Return(errors.New("message broker error"))
