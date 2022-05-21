@@ -109,3 +109,29 @@ func TestDispatcher_Run(t *testing.T) {
 		})
 	}
 }
+
+func TestNewDispatcher(t *testing.T) {
+
+	store := MockStore{}
+	broker := MockBroker{}
+	settings := DispatcherSettings{}
+	machineID := "1"
+	expectedDispatcher := &Dispatcher{
+		recordProcessor: newProcessor(
+			&store,
+			&broker,
+			machineID,
+			RetrialPolicy{},
+		),
+		recordUnlocker: newRecordUnlocker(
+			&store,
+			time.Duration(0),
+		),
+		settings: DispatcherSettings{},
+	}
+
+	d := NewDispatcher(&store, &broker, settings, machineID)
+
+	assert.Equal(t, expectedDispatcher, d)
+
+}
