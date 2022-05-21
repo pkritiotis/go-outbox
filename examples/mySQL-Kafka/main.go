@@ -14,7 +14,7 @@ import (
 )
 
 type SampleMessage struct {
-	A string
+	message string
 }
 
 var (
@@ -78,7 +78,7 @@ func main() {
 	db, _ := openDbConnection()
 	tx, _ := db.BeginTx(context.Background(), nil)
 
-	encodedData, _ := json.Marshal(SampleMessage{A: "ok"})
+	encodedData, _ := json.Marshal(SampleMessage{message: "ok"})
 	outboxService.Add(outbox.Message{
 		Key:     "sampleKey",
 		Headers: nil,
