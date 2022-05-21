@@ -33,10 +33,15 @@ func TestBroker_Send(t *testing.T) {
 				return mp
 			}(),
 			event: outbox.Message{
-				Key:     "sampleKey",
-				Headers: nil,
-				Body:    sarama.ByteEncoder("testing"),
-				Topic:   "sampleTopic",
+				Key: "sampleKey",
+				Headers: []outbox.MessageHeader{
+					{
+						Key:   "testKey",
+						Value: "testValue",
+					},
+				},
+				Body:  sarama.ByteEncoder("testing"),
+				Topic: "sampleTopic",
 			},
 			expErr: sarama.ErrInsufficientData,
 		},
