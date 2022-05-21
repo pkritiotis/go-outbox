@@ -90,6 +90,7 @@ func main() {
 		fmt.Printf("Could not commit the sql transaction: %v", err)
 		os.Exit(1)
 	}
+	<-doneChan
 }
 
 func openDbConnection() (*sql.DB, error) {
