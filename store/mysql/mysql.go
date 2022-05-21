@@ -91,7 +91,10 @@ func (s Store) UpdateRecordByID(rec outbox.Record) error {
 			created_on=?,
 			locked_by=?,
 			locked_on=?,
-			processed_on=?
+			processed_on=?,
+		    number_of_attempts=?,
+		    last_attempted_on=?,
+		    error=?
 		WHERE id = ?
 		`,
 		msgData.Bytes(),
@@ -100,6 +103,9 @@ func (s Store) UpdateRecordByID(rec outbox.Record) error {
 		rec.LockID,
 		rec.LockedOn,
 		rec.ProcessedOn,
+		rec.NumberOfAttempts,
+		rec.LastAttemptOn,
+		rec.Error,
 		rec.ID,
 	)
 	if err != nil {
@@ -126,7 +132,10 @@ func (s Store) ClearLocksByLockID(lockID string) error {
 
 //GetRecordsByLockID returns the records of the provided id
 func (s Store) GetRecordsByLockID(lockID string) ([]outbox.Record, error) {
-	rows, err := s.db.Query("SELECT id, data from outbox WHERE locked_by = ?", lockID)
+	rows, err := s.db.Query(
+		"SELECT id, data, state, created_on,locked_by,locked_on,processed_on,number_of_attempts,last_attempted_on,error from outbox WHERE locked_by = ?",
+		lockID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +148,7 @@ func (s Store) GetRecordsByLockID(lockID string) ([]outbox.Record, error) {
 	for rows.Next() {
 		var rec outbox.Record
 		var data []byte
-		scanErr := rows.Scan(&rec.ID, &data)
+		scanErr := rows.Scan(&rec.ID, &data, &rec.State, &rec.CreatedOn, &rec.LockID, &rec.LockedOn, &rec.ProcessedOn, &rec.NumberOfAttempts, &rec.LastAttemptOn, &rec.Error)
 		if scanErr != nil {
 			if scanErr == sql.ErrNoRows {
 				return messages, nil
