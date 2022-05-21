@@ -5,7 +5,7 @@
 This project provides an implementation of the Transactional Outbox Pattern in Go
 
 # Features
-- Send messages within `sql.Tx` transaction through the Outbox Pattern
+- Send messages within a `sql.Tx` transaction through the Outbox Pattern
 - Optional Maximum attempts limit for a specific message
 - Outbox row locking so that concurrent outbox workers don't process the same records
   - Includes a background worker that cleans record locks after a specified time
@@ -85,7 +85,8 @@ func main() {
 
 ```
 ## Start the outbox dispatcher
-The dispatcher can run on the same or different instance of the applicatin that uses the outbox.
+The dispatcher can run on the same or different instance of the application that uses the outbox.
+Once the dispatcher starts, it will periodically check for new outbox messages and push them to the kafka broker
 ```go
 func main() {
   
