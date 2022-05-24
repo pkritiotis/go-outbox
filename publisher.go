@@ -6,16 +6,16 @@ import (
 	"github.com/pkritiotis/outbox/internal/uuid"
 )
 
-//Outbox encapsulates the save functionality of the outbox pattern
-type Outbox struct {
+//Publisher encapsulates the save functionality of the outbox pattern
+type Publisher struct {
 	store Store
 	time  time.Provider
 	uuid  uuid.Provider
 }
 
-//New is the Outbox constructor
-func New(store Store) Outbox {
-	return Outbox{store: store, time: time.NewTimeProvider(), uuid: uuid.NewUUIDProvider()}
+//NewPublisher is the Publisher constructor
+func NewPublisher(store Store) Publisher {
+	return Publisher{store: store, time: time.NewTimeProvider(), uuid: uuid.NewUUIDProvider()}
 }
 
 //MessageHeader is the MessageHeader of the Message to be sent. It is used by Brokers
@@ -32,8 +32,8 @@ type Message struct {
 	Topic   string
 }
 
-//Add stores the msg Message within the provided SQL tx
-func (o Outbox) Add(msg Message, tx *sql.Tx) error {
+//Send stores the provided Message within the provided sql.Tx
+func (o Publisher) Send(msg Message, tx *sql.Tx) error {
 	newID := o.uuid.NewUUID()
 	record := Record{
 		ID:          newID,

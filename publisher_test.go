@@ -13,12 +13,12 @@ import (
 
 func TestNew(t *testing.T) {
 	store := &MockStore{}
-	expectedOutbox := Outbox{
+	expectedOutbox := Publisher{
 		store: store,
 		time:  time2.NewTimeProvider(),
 		uuid:  uuid2.NewUUIDProvider(),
 	}
-	got := New(store)
+	got := NewPublisher(store)
 	assert.Equal(t, got, expectedOutbox)
 }
 
@@ -48,7 +48,7 @@ func TestOutbox_Add(t *testing.T) {
 		tx     *sql.Tx
 		expErr error
 	}{
-		"Successful Add Record should return without error": {
+		"Successful Send Record should return without error": {
 			msg: sampleMessage,
 			store: func() *MockStore {
 				mp := MockStore{}
@@ -70,7 +70,7 @@ func TestOutbox_Add(t *testing.T) {
 			tx:     &sampleTx,
 			expErr: nil,
 		},
-		"Failure in Add Record should return error": {
+		"Failure in Send Record should return error": {
 			msg: sampleMessage,
 			store: func() *MockStore {
 				mp := MockStore{}
@@ -96,12 +96,12 @@ func TestOutbox_Add(t *testing.T) {
 	for name, test := range tests {
 		tt := test
 		t.Run(name, func(t *testing.T) {
-			s := Outbox{
+			s := Publisher{
 				store: tt.store,
 				time:  timeProvider,
 				uuid:  uuidProvider,
 			}
-			err := s.Add(tt.msg, tt.tx)
+			err := s.Send(tt.msg, tt.tx)
 			assert.Equal(t, tt.expErr, err)
 
 		})

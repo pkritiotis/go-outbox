@@ -46,7 +46,7 @@ func (d defaultRecordProcessor) ProcessRecords() error {
 func (d defaultRecordProcessor) publishMessages(records []Record) error {
 
 	for _, rec := range records {
-		// Publish message to message broker
+		// Send message to message broker
 		now := d.time.Now().UTC()
 		rec.LastAttemptOn = &now
 		rec.NumberOfAttempts++

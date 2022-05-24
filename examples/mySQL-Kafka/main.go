@@ -72,14 +72,14 @@ func main() {
 	}()
 
 	//Initialize the outbox service
-	outboxService := outbox.New(store)
+	publisher := outbox.NewPublisher(store)
 
 	//Open a db connection and perform a transaction
 	db, _ := openDbConnection()
 	tx, _ := db.BeginTx(context.Background(), nil)
 
 	encodedData, _ := json.Marshal(SampleMessage{message: "ok"})
-	outboxService.Add(outbox.Message{
+	publisher.Send(outbox.Message{
 		Key:     "sampleKey",
 		Headers: nil,
 		Body:    encodedData,
