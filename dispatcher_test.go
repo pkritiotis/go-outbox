@@ -11,12 +11,13 @@ func TestDispatcher_Run(t *testing.T) {
 	tests := map[string]struct {
 		recordProcessor processor
 		recordUnlocker  unlocker
+		recordCleaner   cleaner
 		settings        DispatcherSettings
 		errChan         chan error
 		doneChan        chan struct{}
 		expError        error
 	}{
-		"Should execute processor and unlocker successfully": {
+		"Should execute processor, unlocker, and cleaner successfully": {
 			recordProcessor: func() *mockRecordProcessor {
 				mp := mockRecordProcessor{}
 				mp.On("ProcessRecords").Return(nil)
@@ -27,10 +28,17 @@ func TestDispatcher_Run(t *testing.T) {
 				mp.On("UnlockExpiredMessages").Return(nil)
 				return &mp
 			}(),
+			recordCleaner: func() *mockRecordCleaner {
+				mp := mockRecordCleaner{}
+				mp.On("RemoveExpiredMessages").Return(nil)
+				return &mp
+			}(),
 			settings: DispatcherSettings{
-				ProcessInterval:     1 * time.Minute,
-				LockCheckerInterval: 1 * time.Minute,
-				MaxLockTimeDuration: 1 * time.Minute,
+				ProcessInterval:           1,
+				LockCheckerInterval:       1,
+				CleanupWorkerInterval:     1,
+				MaxLockTimeDuration:       1 * time.Minute,
+				MessagesRetentionDuration: 10 * time.Minute,
 				RetrialPolicy: RetrialPolicy{
 					MaxSendAttemptsEnabled: true,
 					MaxSendAttempts:        12,
@@ -43,7 +51,7 @@ func TestDispatcher_Run(t *testing.T) {
 		"Error in process records should return error": {
 			recordProcessor: func() *mockRecordProcessor {
 				mp := mockRecordProcessor{}
-				mp.On("ProcessRecords").Return(errors.New("test"))
+				mp.On("ProcessRecords").Return(errors.New("process error"))
 				return &mp
 			}(),
 			recordUnlocker: func() *mockRecordUnlocker {
@@ -51,10 +59,17 @@ func TestDispatcher_Run(t *testing.T) {
 				mp.On("UnlockExpiredMessages").Return(nil)
 				return &mp
 			}(),
+			recordCleaner: func() *mockRecordCleaner {
+				mp := mockRecordCleaner{}
+				mp.On("RemoveExpiredMessages").Return(nil)
+				return &mp
+			}(),
 			settings: DispatcherSettings{
-				ProcessInterval:     1,
-				LockCheckerInterval: 1,
-				MaxLockTimeDuration: 1,
+				ProcessInterval:           1,
+				LockCheckerInterval:       1,
+				CleanupWorkerInterval:     1,
+				MaxLockTimeDuration:       1,
+				MessagesRetentionDuration: 10 * time.Minute,
 				RetrialPolicy: RetrialPolicy{
 					MaxSendAttemptsEnabled: true,
 					MaxSendAttempts:        12,
@@ -62,7 +77,7 @@ func TestDispatcher_Run(t *testing.T) {
 			},
 			errChan:  make(chan error),
 			doneChan: make(chan struct{}),
-			expError: errors.New("test"),
+			expError: errors.New("process error"),
 		},
 		"Error in unlock records should return error": {
 			recordProcessor: func() *mockRecordProcessor {
@@ -72,13 +87,20 @@ func TestDispatcher_Run(t *testing.T) {
 			}(),
 			recordUnlocker: func() *mockRecordUnlocker {
 				mp := mockRecordUnlocker{}
-				mp.On("UnlockExpiredMessages").Return(errors.New("test"))
+				mp.On("UnlockExpiredMessages").Return(errors.New("unlocker error"))
+				return &mp
+			}(),
+			recordCleaner: func() *mockRecordCleaner {
+				mp := mockRecordCleaner{}
+				mp.On("RemoveExpiredMessages").Return(nil)
 				return &mp
 			}(),
 			settings: DispatcherSettings{
-				ProcessInterval:     1,
-				LockCheckerInterval: 1,
-				MaxLockTimeDuration: 1,
+				ProcessInterval:           1,
+				LockCheckerInterval:       1,
+				CleanupWorkerInterval:     1,
+				MaxLockTimeDuration:       1,
+				MessagesRetentionDuration: 10 * time.Minute,
 				RetrialPolicy: RetrialPolicy{
 					MaxSendAttemptsEnabled: true,
 					MaxSendAttempts:        12,
@@ -86,7 +108,38 @@ func TestDispatcher_Run(t *testing.T) {
 			},
 			errChan:  make(chan error),
 			doneChan: make(chan struct{}),
-			expError: errors.New("test"),
+			expError: errors.New("unlocker error"),
+		},
+		"Error in clean records should return error": {
+			recordProcessor: func() *mockRecordProcessor {
+				mp := mockRecordProcessor{}
+				mp.On("ProcessRecords").Return(nil)
+				return &mp
+			}(),
+			recordUnlocker: func() *mockRecordUnlocker {
+				mp := mockRecordUnlocker{}
+				mp.On("UnlockExpiredMessages").Return(nil)
+				return &mp
+			}(),
+			recordCleaner: func() *mockRecordCleaner {
+				mp := mockRecordCleaner{}
+				mp.On("RemoveExpiredMessages").Return(errors.New("cleaner error"))
+				return &mp
+			}(),
+			settings: DispatcherSettings{
+				ProcessInterval:           1,
+				LockCheckerInterval:       1,
+				CleanupWorkerInterval:     1,
+				MaxLockTimeDuration:       1,
+				MessagesRetentionDuration: 10 * time.Minute,
+				RetrialPolicy: RetrialPolicy{
+					MaxSendAttemptsEnabled: true,
+					MaxSendAttempts:        12,
+				},
+			},
+			errChan:  make(chan error),
+			doneChan: make(chan struct{}),
+			expError: errors.New("cleaner error"),
 		},
 	}
 
@@ -96,6 +149,7 @@ func TestDispatcher_Run(t *testing.T) {
 			d := Dispatcher{
 				recordProcessor: tt.recordProcessor,
 				recordUnlocker:  tt.recordUnlocker,
+				recordCleaner:   tt.recordCleaner,
 				settings:        tt.settings,
 			}
 			d.Run(tt.errChan, tt.doneChan)
@@ -124,6 +178,10 @@ func TestNewDispatcher(t *testing.T) {
 			RetrialPolicy{},
 		),
 		recordUnlocker: newRecordUnlocker(
+			&store,
+			time.Duration(0),
+		),
+		recordCleaner: newRecordCleaner(
 			&store,
 			time.Duration(0),
 		),

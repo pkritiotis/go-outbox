@@ -46,4 +46,6 @@ type Store interface {
 	ClearLocksWithDurationBeforeDate(time time.Time) error
 	//ClearLocksByLockID clears all records locked by the provided lockID
 	ClearLocksByLockID(lockID string) error
+	//RemoveRecordsBeforeDatetime removes all records before the provided time
+	RemoveRecordsBeforeDatetime(expiryTime time.Time) error
 }

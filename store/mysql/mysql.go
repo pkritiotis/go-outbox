@@ -195,3 +195,16 @@ func (s Store) AddRecordTx(rec outbox.Record, tx *sql.Tx) error {
 	}
 	return nil
 }
+
+//RemoveRecordsBeforeDatetime removes records before the provided datetime
+func (s Store) RemoveRecordsBeforeDatetime(expiryTime time.Time) error {
+	_, err := s.db.Exec(
+		`DELETE FROM outbox 
+		WHERE created_on < ?
+		`,
+		expiryTime)
+	if err != nil {
+		return err
+	}
+	return nil
+}

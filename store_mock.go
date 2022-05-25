@@ -47,3 +47,9 @@ func (m *MockStore) ClearLocksByLockID(lockID string) error {
 	args := m.Called(lockID)
 	return args.Error(0)
 }
+
+//RemoveRecordsBeforeDatetime method mock
+func (m *MockStore) RemoveRecordsBeforeDatetime(expiryTime time.Time) error {
+	args := m.Called(expiryTime)
+	return args.Error(0)
+}

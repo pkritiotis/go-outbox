@@ -59,9 +59,11 @@ func main() {
 
 	//Initialize and run the dispatcher
 	settings := outbox.DispatcherSettings{
-		ProcessInterval:     20 * time.Second,
-		LockCheckerInterval: 600 * time.Minute,
-		MaxLockTimeDuration: 5 * time.Minute,
+		ProcessInterval:           20 * time.Second,
+		LockCheckerInterval:       600 * time.Minute,
+		CleanupWorkerInterval:     60 * time.Second,
+		MaxLockTimeDuration:       5 * time.Minute,
+		MessagesRetentionDuration: 1 * time.Minute,
 	}
 	dispatcher := outbox.NewDispatcher(store, broker, settings, "1")
 	dispatcher.Run(errChan, doneChan)

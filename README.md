@@ -2,13 +2,14 @@
 [![Go Build & Test](https://github.com/pkritiotis/go-outbox/actions/workflows/build-test.yml/badge.svg)](https://github.com/pkritiotis/go-outbox/actions/workflows/build-test.yml)[![golangci-lint](https://github.com/pkritiotis/go-outbox/actions/workflows/lint.yml/badge.svg)](https://github.com/pkritiotis/go-outbox/actions/workflows/lint.yml)
 [![codecov](https://codecov.io/gh/pkritiotis/go-outbox/branch/main/graph/badge.svg?token=KZBBS5MRXP)](https://codecov.io/gh/pkritiotis/go-outbox)
 
-This project provides an implementation of the Transactional Outbox Pattern in Go
+This project provides a sample implementation of the Transactional Outbox Pattern in Go
 
 # Features
 - Send messages within a `sql.Tx` transaction through the Outbox Pattern
 - Optional Maximum attempts limit for a specific message
 - Outbox row locking so that concurrent outbox workers don't process the same records
   - Includes a background worker that cleans record locks after a specified time
+- Message Retention. A configurable cleanup worker removes old records after a configurable duration has passed. 
 - Extensible message broker interface
 - Extensible data store interface for sql databases
 
@@ -119,12 +120,14 @@ func main() {
   // Initialize the dispatcher
 	
 	settings := outbox.DispatcherSettings{
-		ProcessInterval:     20 * time.Minute,
-		LockCheckerInterval: 600 * time.Minute,
-		MaxLockTimeDuration: 5 * time.Minute,
+      ProcessInterval:           20 * time.Second,
+      LockCheckerInterval:       600 * time.Minute,
+      CleanupWorkerInterval:     60 * time.Second,
+      MaxLockTimeDuration:       5 * time.Minute,
+      MessagesRetentionDuration: 1 * time.Minute,
 	}
   
-  d := outbox.NewDispatcher(store, broker, settings, "1")
+    d := outbox.NewDispatcher(store, broker, settings, "1")
 
   // Run the dispatcher
 	errChan := make(chan error)
