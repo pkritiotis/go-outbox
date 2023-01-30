@@ -2,9 +2,10 @@ package outbox
 
 import (
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDispatcher_Run(t *testing.T) {
@@ -170,7 +171,7 @@ func TestNewDispatcher(t *testing.T) {
 	broker := MockBroker{}
 	settings := DispatcherSettings{}
 	machineID := "1"
-	expectedDispatcher := &Dispatcher{
+	expectedDispatcher := Dispatcher{
 		recordProcessor: newProcessor(
 			&store,
 			&broker,
