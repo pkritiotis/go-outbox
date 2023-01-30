@@ -3,11 +3,12 @@ package outbox
 import (
 	"errors"
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
 	time2 "github.com/pkritiotis/outbox/internal/time"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 func TestDefaultRecordProcessor_newProcessor(t *testing.T) {
@@ -30,10 +31,9 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 
 	sampleMessage := Message{
 		Key: "testKey",
-		Headers: []MessageHeader{{
-			Key:   "testHeader",
-			Value: "testValue",
-		}},
+		Headers: map[string]string{
+			"testHeader": "testValue",
+		},
 		Body:  []byte("testvalue"),
 		Topic: "testTopic",
 	}

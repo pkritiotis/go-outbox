@@ -1,10 +1,11 @@
 package kafka
 
 import (
+	"testing"
+
 	"github.com/Shopify/sarama"
 	"github.com/pkritiotis/outbox"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestBroker_Send(t *testing.T) {
@@ -34,11 +35,8 @@ func TestBroker_Send(t *testing.T) {
 			}(),
 			event: outbox.Message{
 				Key: "sampleKey",
-				Headers: []outbox.MessageHeader{
-					{
-						Key:   "testKey",
-						Value: "testValue",
-					},
+				Headers: map[string]string{
+					"testKey": "testValue",
 				},
 				Body:  sarama.ByteEncoder("testing"),
 				Topic: "sampleTopic",
