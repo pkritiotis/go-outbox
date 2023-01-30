@@ -42,8 +42,8 @@ type Dispatcher struct {
 }
 
 //NewDispatcher constructor
-func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSettings, machineID string) *Dispatcher {
-	return &Dispatcher{
+func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSettings, machineID string) Dispatcher {
+	return Dispatcher{
 		recordProcessor: newProcessor(
 			store,
 			broker,
