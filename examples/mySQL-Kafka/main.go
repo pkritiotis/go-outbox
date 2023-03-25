@@ -8,6 +8,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/pkritiotis/outbox"
 	"github.com/pkritiotis/outbox/broker/kafka"
+	"github.com/pkritiotis/outbox/logs/zerolog"
 	"github.com/pkritiotis/outbox/store/mysql"
 	"os"
 	"time"
@@ -39,10 +40,14 @@ func init() {
 }
 
 func main() {
+
 	defer func() { doneChan <- struct{}{} }()
 
+	// Initialize the logger
+	logger := zerolog.NewZerologAdapter("go-outbox", os.Stdout)
+
 	//Initialize the sql store
-	store, err := mysql.NewStore(sqlSettings)
+	store, err := mysql.NewStore(sqlSettings, logger)
 	if err != nil {
 		fmt.Printf("Could not initialize the store: %v", err)
 		os.Exit(1)
@@ -65,7 +70,7 @@ func main() {
 		MaxLockTimeDuration:       5 * time.Minute,
 		MessagesRetentionDuration: 1 * time.Minute,
 	}
-	dispatcher := outbox.NewDispatcher(store, broker, settings, "1")
+	dispatcher := outbox.NewDispatcher(store, logger, broker, settings, "1")
 	dispatcher.Run(errChan, doneChan)
 
 	go func() {

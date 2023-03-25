@@ -1,7 +1,7 @@
 package outbox
 
 import (
-	"log"
+	"github.com/pkritiotis/outbox/logs"
 	"time"
 )
 
@@ -33,16 +33,17 @@ type DispatcherSettings struct {
 	MessagesRetentionDuration time.Duration
 }
 
-//Dispatcher initializes and runs the outbox dispatcher
+// Dispatcher initializes and runs the outbox dispatcher
 type Dispatcher struct {
 	recordProcessor processor
 	recordUnlocker  unlocker
 	recordCleaner   cleaner
 	settings        DispatcherSettings
+	logger          logs.LoggerAdapter
 }
 
-//NewDispatcher constructor
-func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSettings, machineID string) *Dispatcher {
+// NewDispatcher constructor
+func NewDispatcher(store Store, logger logs.LoggerAdapter, broker MessageBroker, settings DispatcherSettings, machineID string) *Dispatcher {
 	return &Dispatcher{
 		recordProcessor: newProcessor(
 			store,
@@ -59,11 +60,12 @@ func NewDispatcher(store Store, broker MessageBroker, settings DispatcherSetting
 			settings.MessagesRetentionDuration,
 		),
 		settings: settings,
+		logger:   logger,
 	}
 }
 
-//Run periodically checks for new outbox messages from the Store, sends the messages through the MessageBroker
-//and updates the message status accordingly
+// Run periodically checks for new outbox messages from the Store, sends the messages through the MessageBroker
+// and updates the message status accordingly
 func (d Dispatcher) Run(errChan chan<- error, doneChan <-chan struct{}) {
 	doneProc := make(chan struct{}, 1)
 	doneUnlock := make(chan struct{}, 1)
@@ -85,19 +87,19 @@ func (d Dispatcher) Run(errChan chan<- error, doneChan <-chan struct{}) {
 func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan struct{}) {
 	ticker := time.NewTicker(d.settings.ProcessInterval)
 	for {
-		log.Print("Record processor Running")
+		d.logger.Info("Record processor Running", nil)
 		err := d.recordProcessor.ProcessRecords()
 		if err != nil {
 			errChan <- err
 		}
-		log.Print("Record Processing Finished")
+		d.logger.Info("Record Processing Finished", nil)
 
 		select {
 		case <-ticker.C:
 			continue
 		case <-doneChan:
 			ticker.Stop()
-			log.Print("Stopping Record processor")
+			d.logger.Info("Stopping Record processor", nil)
 			return
 		}
 	}
@@ -106,18 +108,18 @@ func (d Dispatcher) runRecordProcessor(errChan chan<- error, doneChan <-chan str
 func (d Dispatcher) runRecordUnlocker(errChan chan<- error, doneChan <-chan struct{}) {
 	ticker := time.NewTicker(d.settings.LockCheckerInterval)
 	for {
-		log.Print("Record unlocker Running")
+		d.logger.Info("Record unlocker Running", nil)
 		err := d.recordUnlocker.UnlockExpiredMessages()
 		if err != nil {
 			errChan <- err
 		}
-		log.Print("Record unlocker Finished")
+		d.logger.Info("Record unlocker Finished", nil)
 		select {
 		case <-ticker.C:
 			continue
 		case <-doneChan:
 			ticker.Stop()
-			log.Print("Stopping Record unlocker")
+			d.logger.Info("Stopping Record unlocker", nil)
 			return
 
 		}
@@ -127,18 +129,18 @@ func (d Dispatcher) runRecordUnlocker(errChan chan<- error, doneChan <-chan stru
 func (d Dispatcher) runRecordCleaner(errChan chan<- error, doneChan <-chan struct{}) {
 	ticker := time.NewTicker(d.settings.CleanupWorkerInterval)
 	for {
-		log.Print("Record retention cleaner Running")
+		d.logger.Info("Record retention cleaner Running", nil)
 		err := d.recordCleaner.RemoveExpiredMessages()
 		if err != nil {
 			errChan <- err
 		}
-		log.Print("Record retention cleaner Finished")
+		d.logger.Info("Record retention cleaner Finished", nil)
 		select {
 		case <-ticker.C:
 			continue
 		case <-doneChan:
 			ticker.Stop()
-			log.Print("Stopping Record retention cleaner")
+			d.logger.Info("Stopping Record retention cleaner", nil)
 			return
 
 		}

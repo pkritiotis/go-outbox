@@ -2,7 +2,9 @@ package outbox
 
 import (
 	"errors"
+	"github.com/pkritiotis/outbox/logs/zerolog"
 	"github.com/stretchr/testify/assert"
+	"os"
 	"testing"
 	"time"
 )
@@ -146,11 +148,13 @@ func TestDispatcher_Run(t *testing.T) {
 	for name, test := range tests {
 		tt := test
 		t.Run(name, func(t *testing.T) {
+			logger := zerolog.NewZerologAdapter("go-outbox", os.Stdout)
 			d := Dispatcher{
 				recordProcessor: tt.recordProcessor,
 				recordUnlocker:  tt.recordUnlocker,
 				recordCleaner:   tt.recordCleaner,
 				settings:        tt.settings,
+				logger:          logger,
 			}
 			d.Run(tt.errChan, tt.doneChan)
 			var err error
@@ -166,6 +170,7 @@ func TestDispatcher_Run(t *testing.T) {
 
 func TestNewDispatcher(t *testing.T) {
 
+	logger := zerolog.NewZerologAdapter("go-outbox", os.Stdout)
 	store := MockStore{}
 	broker := MockBroker{}
 	settings := DispatcherSettings{}
@@ -186,9 +191,10 @@ func TestNewDispatcher(t *testing.T) {
 			time.Duration(0),
 		),
 		settings: DispatcherSettings{},
+		logger:   logger,
 	}
 
-	d := NewDispatcher(&store, &broker, settings, machineID)
+	d := NewDispatcher(&store, logger, &broker, settings, machineID)
 
 	assert.Equal(t, expectedDispatcher, d)
 

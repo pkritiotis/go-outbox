@@ -1,5 +1,7 @@
 package time
 
+// time package extend time.Time for debugging purpose
+
 import (
 	"github.com/stretchr/testify/mock"
 	"time"
