@@ -3,7 +3,7 @@ package kafka
 import (
 	"testing"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"github.com/pkritiotis/outbox"
 	"github.com/stretchr/testify/assert"
 )
@@ -22,9 +22,8 @@ func TestBroker_Send(t *testing.T) {
 					"MetadataRequest": sarama.NewMockMetadataResponse(t).
 						SetBroker(mp.Addr(), mp.BrokerID()).
 						SetLeader("sampleTopic", 0, mp.BrokerID()),
-					"ProduceRequest": sarama.NewMockProduceResponse(t),
+					"ProduceRequest": sarama.NewMockProduceResponse(t).SetError("sampleTopic", 0, sarama.ErrBrokerNotAvailable),
 				})
-
 				return mp
 			}(),
 			config: func() *sarama.Config {
@@ -44,7 +43,7 @@ func TestBroker_Send(t *testing.T) {
 				Body:  sarama.ByteEncoder("testing"),
 				Topic: "sampleTopic",
 			},
-			expErr: sarama.ErrInsufficientData,
+			expErr: sarama.KError(sarama.ErrBrokerNotAvailable),
 		},
 	}
 	for name, test := range tests {

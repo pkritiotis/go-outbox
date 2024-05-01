@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"github.com/pkritiotis/outbox"
 	"github.com/pkritiotis/outbox/broker/kafka"
 	"github.com/pkritiotis/outbox/store/mysql"
