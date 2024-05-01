@@ -1,8 +1,9 @@
 package outbox
 
 import (
-	"github.com/pkritiotis/outbox/internal/time"
 	time2 "time"
+
+	"github.com/pkritiotis/outbox/internal/time"
 )
 
 type recordCleaner struct {

@@ -5,12 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/Shopify/sarama"
 	"github.com/pkritiotis/outbox"
 	"github.com/pkritiotis/outbox/broker/kafka"
 	"github.com/pkritiotis/outbox/store/mysql"
-	"os"
-	"time"
 )
 
 type SampleMessage struct {
@@ -41,14 +42,14 @@ func init() {
 func main() {
 	defer func() { doneChan <- struct{}{} }()
 
-	//Initialize the sql store
+	// Initialize the sql store
 	store, err := mysql.NewStore(sqlSettings)
 	if err != nil {
 		fmt.Printf("Could not initialize the store: %v", err)
 		os.Exit(1)
 	}
 
-	//Initialize the message broker
+	// Initialize the message broker
 	c := sarama.NewConfig()
 	c.Producer.Return.Successes = true
 	broker, err := kafka.NewBroker([]string{brokerAddr}, c)
@@ -57,7 +58,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	//Initialize and run the dispatcher
+	// Initialize and run the dispatcher
 	settings := outbox.DispatcherSettings{
 		ProcessInterval:           20 * time.Second,
 		LockCheckerInterval:       600 * time.Minute,
@@ -73,10 +74,10 @@ func main() {
 		fmt.Printf(err.Error())
 	}()
 
-	//Initialize the outbox service
+	// Initialize the outbox service
 	publisher := outbox.NewPublisher(store)
 
-	//Open a db connection and perform a transaction
+	// Open a db connection and perform a transaction
 	db, _ := openDbConnection()
 	tx, _ := db.BeginTx(context.Background(), nil)
 

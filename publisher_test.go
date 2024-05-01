@@ -3,12 +3,13 @@ package outbox
 import (
 	"database/sql"
 	"errors"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
 	time2 "github.com/pkritiotis/outbox/internal/time"
 	uuid2 "github.com/pkritiotis/outbox/internal/uuid"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 func TestNew(t *testing.T) {
@@ -103,7 +104,6 @@ func TestOutbox_Add(t *testing.T) {
 			}
 			err := s.Send(tt.msg, tt.tx)
 			assert.Equal(t, tt.expErr, err)
-
 		})
 	}
 }

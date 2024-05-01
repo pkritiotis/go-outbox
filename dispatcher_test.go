@@ -2,9 +2,10 @@ package outbox
 
 import (
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDispatcher_Run(t *testing.T) {
@@ -165,7 +166,6 @@ func TestDispatcher_Run(t *testing.T) {
 }
 
 func TestNewDispatcher(t *testing.T) {
-
 	store := MockStore{}
 	broker := MockBroker{}
 	settings := DispatcherSettings{}
@@ -191,5 +191,4 @@ func TestNewDispatcher(t *testing.T) {
 	d := NewDispatcher(&store, &broker, settings, machineID)
 
 	assert.Equal(t, expectedDispatcher, d)
-
 }

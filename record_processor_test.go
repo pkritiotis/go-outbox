@@ -3,11 +3,12 @@ package outbox
 import (
 	"errors"
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
 	time2 "github.com/pkritiotis/outbox/internal/time"
 	"github.com/stretchr/testify/assert"
-	"testing"
-	"time"
 )
 
 func TestDefaultRecordProcessor_newProcessor(t *testing.T) {

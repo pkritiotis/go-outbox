@@ -2,10 +2,11 @@ package outbox
 
 import (
 	"errors"
-	"github.com/pkritiotis/outbox/internal/time"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	time2 "time"
+
+	"github.com/pkritiotis/outbox/internal/time"
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_recordUnlocker_unlockExpiredMessages(t *testing.T) {

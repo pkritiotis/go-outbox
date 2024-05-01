@@ -1,10 +1,11 @@
 package kafka
 
 import (
+	"testing"
+
 	"github.com/Shopify/sarama"
 	"github.com/pkritiotis/outbox"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestBroker_Send(t *testing.T) {
@@ -57,7 +58,6 @@ func TestBroker_Send(t *testing.T) {
 			}
 			err = b.Send(tt.event)
 			assert.Equal(t, tt.expErr, err)
-
 		})
 	}
 }
