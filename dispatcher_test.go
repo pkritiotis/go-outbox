@@ -170,7 +170,7 @@ func TestNewDispatcher(t *testing.T) {
 	broker := MockBroker{}
 	settings := DispatcherSettings{}
 	machineID := "1"
-	expectedDispatcher := &Dispatcher{
+	expectedDispatcher := Dispatcher{
 		recordProcessor: newProcessor(
 			&store,
 			&broker,

@@ -31,10 +31,9 @@ func Test_defaultRecordProcessor_ProcessRecords(t *testing.T) {
 
 	sampleMessage := Message{
 		Key: "testKey",
-		Headers: []MessageHeader{{
-			Key:   "testHeader",
-			Value: "testValue",
-		}},
+		Headers: map[string]string{
+			"testHeader": "testValue",
+		},
 		Body:  []byte("testvalue"),
 		Topic: "testTopic",
 	}

@@ -26,10 +26,10 @@ func NewBroker(brokers []string, config *sarama.Config) (*Broker, error) {
 func (b Broker) Send(event outbox.Message) error {
 	var headers []sarama.RecordHeader
 
-	for i := 0; i < len(event.Headers); i++ {
+	for k, v := range event.Headers {
 		headers = append(headers, sarama.RecordHeader{
-			Key:   sarama.ByteEncoder(event.Headers[i].Key),
-			Value: sarama.ByteEncoder(event.Headers[i].Value),
+			Key:   sarama.ByteEncoder(k),
+			Value: sarama.ByteEncoder(v),
 		})
 	}
 

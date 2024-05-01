@@ -19,16 +19,10 @@ func NewPublisher(store Store) Publisher {
 	return Publisher{store: store, time: time.NewTimeProvider(), uuid: uuid.NewUUIDProvider()}
 }
 
-// MessageHeader is the MessageHeader of the Message to be sent. It is used by Brokers
-type MessageHeader struct {
-	Key   string
-	Value string
-}
-
 // Message encapsulates the contents of the message to be sent
 type Message struct {
 	Key     string
-	Headers []MessageHeader
+	Headers map[string]string
 	Body    []byte
 	Topic   string
 }
