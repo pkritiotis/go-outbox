@@ -1,8 +1,10 @@
+// Package time provides a time mock provider
 package time
 
 import (
-	"github.com/stretchr/testify/mock"
 	"time"
+
+	"github.com/stretchr/testify/mock"
 )
 
 // MockProvider mocks Provider

@@ -1,7 +1,8 @@
+// Package kafka provides a Kafka message broker implementation
 package kafka
 
 import (
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 
 	"github.com/pkritiotis/outbox"
 )

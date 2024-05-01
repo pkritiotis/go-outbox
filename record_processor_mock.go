@@ -1,8 +1,9 @@
 package outbox
 
 import (
-	"github.com/stretchr/testify/mock"
 	"sync"
+
+	"github.com/stretchr/testify/mock"
 )
 
 type mockRecordProcessor struct {

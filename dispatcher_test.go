@@ -166,7 +166,6 @@ func TestDispatcher_Run(t *testing.T) {
 }
 
 func TestNewDispatcher(t *testing.T) {
-
 	store := MockStore{}
 	broker := MockBroker{}
 	settings := DispatcherSettings{}
@@ -192,5 +191,4 @@ func TestNewDispatcher(t *testing.T) {
 	d := NewDispatcher(&store, &broker, settings, machineID)
 
 	assert.Equal(t, expectedDispatcher, d)
-
 }
