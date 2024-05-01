@@ -96,11 +96,11 @@ github.com/stretchr/objx
 ## explicit; go 1.13
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
-# golang.org/x/crypto v0.0.0-20201112155050-0c6587e931a9
-## explicit; go 1.11
+# golang.org/x/crypto v0.17.0
+## explicit; go 1.18
 golang.org/x/crypto/md4
 golang.org/x/crypto/pbkdf2
-# golang.org/x/net v0.0.0-20220105145211-5b0dc2dfae98
+# golang.org/x/net v0.10.0
 ## explicit; go 1.17
 golang.org/x/net/http2/hpack
 golang.org/x/net/internal/socks
