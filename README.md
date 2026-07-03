@@ -2,7 +2,7 @@
 [![Go Build & Test](https://github.com/pkritiotis/go-outbox/actions/workflows/build-test.yml/badge.svg)](https://github.com/pkritiotis/go-outbox/actions/workflows/build-test.yml)[![golangci-lint](https://github.com/pkritiotis/go-outbox/actions/workflows/lint.yml/badge.svg)](https://github.com/pkritiotis/go-outbox/actions/workflows/lint.yml)
 [![codecov](https://codecov.io/gh/pkritiotis/go-outbox/branch/main/graph/badge.svg?token=KZBBS5MRXP)](https://codecov.io/gh/pkritiotis/go-outbox)
 
-This project provides a sample implementation of the Transactional Outbox Pattern in Go
+This project provides a sample implementation of the Transactional Outbox Pattern in Go. Detailed description in my blog post: https://pkritiotis.io/outbox-pattern-in-go/
 
 # Features
 - Send messages within a `sql.Tx` transaction through the Outbox Pattern
