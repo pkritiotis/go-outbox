@@ -122,7 +122,7 @@ func (s Store) ClearLocksByLockID(lockID string) error {
 		SET 
 			locked_by=NULL,
 			locked_on=NULL
-		WHERE id = ?
+		WHERE locked_by = ?
 		`,
 		lockID)
 	if err != nil {
