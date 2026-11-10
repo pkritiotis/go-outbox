@@ -28,6 +28,7 @@ func TestBroker_Send(t *testing.T) {
 			}(),
 			config: func() *sarama.Config {
 				mp := sarama.NewConfig()
+				mp.ApiVersionsRequest = false
 				mp.Producer.Return.Successes = true
 				mp.Producer.Partitioner = sarama.NewRandomPartitioner
 				return mp
@@ -76,6 +77,7 @@ func TestNewBroker_success(t *testing.T) {
 		"ProduceRequest": sarama.NewMockProduceResponse(t),
 	})
 	conf := sarama.NewConfig()
+	conf.ApiVersionsRequest = false
 	brokers := []string{mp.Addr()}
 
 	b, err := NewBroker(brokers, conf)

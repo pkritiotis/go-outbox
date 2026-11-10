@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/rcrowley/go-metrics"
 )
@@ -12,6 +13,10 @@ import (
 type prepEncoder struct {
 	stack  []pushEncoder
 	length int
+}
+
+type prepFlexibleEncoder struct {
+	*prepEncoder
 }
 
 // primitives
@@ -54,12 +59,16 @@ func (pe *prepEncoder) putArrayLength(in int) error {
 	return nil
 }
 
-func (pe *prepEncoder) putCompactArrayLength(in int) {
-	pe.putUVarint(uint64(in + 1))
-}
-
 func (pe *prepEncoder) putBool(in bool) {
 	pe.length++
+}
+
+func (pe *prepEncoder) putKError(in KError) {
+	pe.length += 2
+}
+
+func (pe *prepEncoder) putDurationMs(in time.Duration) {
+	pe.length += 4
 }
 
 // arrays
@@ -81,30 +90,16 @@ func (pe *prepEncoder) putVarintBytes(in []byte) error {
 	return pe.putRawBytes(in)
 }
 
-func (pe *prepEncoder) putCompactBytes(in []byte) error {
-	pe.putUVarint(uint64(len(in) + 1))
-	return pe.putRawBytes(in)
-}
-
-func (pe *prepEncoder) putCompactString(in string) error {
-	pe.putCompactArrayLength(len(in))
-	return pe.putRawBytes([]byte(in))
-}
-
-func (pe *prepEncoder) putNullableCompactString(in *string) error {
-	if in == nil {
-		pe.putUVarint(0)
-		return nil
-	} else {
-		return pe.putCompactString(*in)
-	}
-}
-
 func (pe *prepEncoder) putRawBytes(in []byte) error {
 	if len(in) > math.MaxInt32 {
 		return PacketEncodingError{fmt.Sprintf("byteslice too long (%d)", len(in))}
 	}
 	pe.length += len(in)
+	return nil
+}
+
+func (pe *prepEncoder) putUuid(in Uuid) error {
+	pe.length += 16
 	return nil
 }
 
@@ -140,28 +135,20 @@ func (pe *prepEncoder) putStringArray(in []string) error {
 	return nil
 }
 
-func (pe *prepEncoder) putCompactInt32Array(in []int32) error {
-	if in == nil {
-		return errors.New("expected int32 array to be non null")
+func (pe *prepEncoder) putInt32Array(in []int32) error {
+	err := pe.putArrayLength(len(in))
+	if err != nil {
+		return err
 	}
-
-	pe.putUVarint(uint64(len(in)) + 1)
 	pe.length += 4 * len(in)
 	return nil
 }
 
-func (pe *prepEncoder) putNullableCompactInt32Array(in []int32) error {
+func (pe *prepEncoder) putNullableInt32Array(in []int32) error {
 	if in == nil {
-		pe.putUVarint(0)
+		pe.length += 4
 		return nil
 	}
-
-	pe.putUVarint(uint64(len(in)) + 1)
-	pe.length += 4 * len(in)
-	return nil
-}
-
-func (pe *prepEncoder) putInt32Array(in []int32) error {
 	err := pe.putArrayLength(len(in))
 	if err != nil {
 		return err
@@ -180,7 +167,6 @@ func (pe *prepEncoder) putInt64Array(in []int64) error {
 }
 
 func (pe *prepEncoder) putEmptyTaggedFieldArray() {
-	pe.putUVarint(0)
 }
 
 func (pe *prepEncoder) offset() int {
@@ -208,4 +194,80 @@ func (pe *prepEncoder) pop() error {
 // we do not record metrics during the prep encoder pass
 func (pe *prepEncoder) metricRegistry() metrics.Registry {
 	return nil
+}
+
+func (pe *prepFlexibleEncoder) putArrayLength(in int) error {
+	pe.putUVarint(uint64(in + 1))
+	return nil
+}
+
+func (pe *prepFlexibleEncoder) putBytes(in []byte) error {
+	if in == nil {
+		pe.putUVarint(0)
+		return nil
+	}
+	pe.putUVarint(uint64(len(in) + 1))
+	return pe.putRawBytes(in)
+}
+
+func (pe *prepFlexibleEncoder) putString(in string) error {
+	if err := pe.putArrayLength(len(in)); err != nil {
+		return err
+	}
+	return pe.putRawBytes([]byte(in))
+}
+
+func (pe *prepFlexibleEncoder) putNullableString(in *string) error {
+	if in == nil {
+		pe.putUVarint(0)
+		return nil
+	} else {
+		return pe.putString(*in)
+	}
+}
+
+func (pe *prepFlexibleEncoder) putStringArray(in []string) error {
+	err := pe.putArrayLength(len(in))
+	if err != nil {
+		return err
+	}
+
+	for _, str := range in {
+		if err := pe.putString(str); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (pe *prepFlexibleEncoder) putInt32Array(in []int32) error {
+	if in == nil {
+		return errors.New("expected int32 array to be non null")
+	}
+
+	pe.putUVarint(uint64(len(in)) + 1)
+	pe.length += 4 * len(in)
+	return nil
+}
+
+func (pe *prepFlexibleEncoder) putNullableInt32Array(in []int32) error {
+	if in == nil {
+		pe.putUVarint(0)
+		return nil
+	}
+
+	pe.putUVarint(uint64(len(in)) + 1)
+	pe.length += 4 * len(in)
+	return nil
+}
+
+func (pe *prepFlexibleEncoder) putInt64Array(in []int64) error {
+	pe.putUVarint(uint64(len(in)) + 1)
+	pe.length += 8 * len(in)
+	return nil
+}
+
+func (pe *prepFlexibleEncoder) putEmptyTaggedFieldArray() {
+	pe.putUVarint(0)
 }

@@ -1,7 +1,7 @@
 package sarama
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -26,13 +26,13 @@ func getOrRegisterHistogram(name string, r metrics.Registry) metrics.Histogram {
 func getMetricNameForBroker(name string, broker *Broker) string {
 	// Use broker id like the Java client as it does not contain '.' or ':' characters that
 	// can be interpreted as special character by monitoring tool (e.g. Graphite)
-	return fmt.Sprintf(name+"-for-broker-%d", broker.ID())
+	return name + "-for-broker-" + strconv.FormatInt(int64(broker.ID()), 10)
 }
 
 func getMetricNameForTopic(name string, topic string) string {
 	// Convert dot to _ since reporters like Graphite typically use dot to represent hierarchy
 	// cf. KAFKA-1902 and KAFKA-2337
-	return fmt.Sprintf(name+"-for-topic-%s", strings.ReplaceAll(topic, ".", "_"))
+	return name + "-for-topic-" + strings.ReplaceAll(topic, ".", "_")
 }
 
 func getOrRegisterTopicMeter(name string, topic string, r metrics.Registry) metrics.Meter {
@@ -59,10 +59,10 @@ func newCleanupRegistry(parent metrics.Registry) metrics.Registry {
 	}
 }
 
-func (r *cleanupRegistry) Each(fn func(string, interface{})) {
+func (r *cleanupRegistry) Each(fn func(string, any)) {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
-	wrappedFn := func(name string, iface interface{}) {
+	wrappedFn := func(name string, iface any) {
 		if _, ok := r.metrics[name]; ok {
 			fn(name, iface)
 		}
@@ -70,7 +70,7 @@ func (r *cleanupRegistry) Each(fn func(string, interface{})) {
 	r.parent.Each(wrappedFn)
 }
 
-func (r *cleanupRegistry) Get(name string) interface{} {
+func (r *cleanupRegistry) Get(name string) any {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
 	if _, ok := r.metrics[name]; ok {
@@ -79,14 +79,14 @@ func (r *cleanupRegistry) Get(name string) interface{} {
 	return nil
 }
 
-func (r *cleanupRegistry) GetOrRegister(name string, metric interface{}) interface{} {
+func (r *cleanupRegistry) GetOrRegister(name string, metric any) any {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	r.metrics[name] = struct{}{}
 	return r.parent.GetOrRegister(name, metric)
 }
 
-func (r *cleanupRegistry) Register(name string, metric interface{}) error {
+func (r *cleanupRegistry) Register(name string, metric any) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 	r.metrics[name] = struct{}{}
@@ -97,7 +97,7 @@ func (r *cleanupRegistry) RunHealthchecks() {
 	r.parent.RunHealthchecks()
 }
 
-func (r *cleanupRegistry) GetAll() map[string]map[string]interface{} {
+func (r *cleanupRegistry) GetAll() map[string]map[string]any {
 	return r.parent.GetAll()
 }
 

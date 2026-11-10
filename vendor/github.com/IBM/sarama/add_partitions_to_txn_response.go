@@ -11,8 +11,12 @@ type AddPartitionsToTxnResponse struct {
 	Errors       map[string][]*PartitionError
 }
 
+func (a *AddPartitionsToTxnResponse) setVersion(v int16) {
+	a.Version = v
+}
+
 func (a *AddPartitionsToTxnResponse) encode(pe packetEncoder) error {
-	pe.putInt32(int32(a.ThrottleTime / time.Millisecond))
+	pe.putDurationMs(a.ThrottleTime)
 	if err := pe.putArrayLength(len(a.Errors)); err != nil {
 		return err
 	}
@@ -29,27 +33,30 @@ func (a *AddPartitionsToTxnResponse) encode(pe packetEncoder) error {
 				return err
 			}
 		}
+		pe.putEmptyTaggedFieldArray()
 	}
 
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
 func (a *AddPartitionsToTxnResponse) decode(pd packetDecoder, version int16) (err error) {
 	a.Version = version
-	throttleTime, err := pd.getInt32()
-	if err != nil {
+	if a.ThrottleTime, err = pd.getDurationMs(); err != nil {
 		return err
 	}
-	a.ThrottleTime = time.Duration(throttleTime) * time.Millisecond
 
 	n, err := pd.getArrayLength()
 	if err != nil {
 		return err
 	}
+	if n < 0 {
+		return errInvalidArrayLength
+	}
 
 	a.Errors = make(map[string][]*PartitionError)
 
-	for i := 0; i < n; i++ {
+	for range n {
 		topic, err := pd.getString()
 		if err != nil {
 			return err
@@ -59,22 +66,30 @@ func (a *AddPartitionsToTxnResponse) decode(pd packetDecoder, version int16) (er
 		if err != nil {
 			return err
 		}
+		if m < 0 {
+			return errInvalidArrayLength
+		}
 
 		a.Errors[topic] = make([]*PartitionError, m)
 
-		for j := 0; j < m; j++ {
+		for j := range m {
 			a.Errors[topic][j] = new(PartitionError)
 			if err := a.Errors[topic][j].decode(pd, version); err != nil {
 				return err
 			}
 		}
+
+		if _, err = pd.getEmptyTaggedFieldArray(); err != nil {
+			return err
+		}
 	}
 
-	return nil
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }
 
 func (a *AddPartitionsToTxnResponse) key() int16 {
-	return 24
+	return apiKeyAddPartitionsToTxn
 }
 
 func (a *AddPartitionsToTxnResponse) version() int16 {
@@ -82,15 +97,28 @@ func (a *AddPartitionsToTxnResponse) version() int16 {
 }
 
 func (a *AddPartitionsToTxnResponse) headerVersion() int16 {
+	if a.Version >= 3 {
+		return 1
+	}
 	return 0
 }
 
 func (a *AddPartitionsToTxnResponse) isValidVersion() bool {
-	return a.Version >= 0 && a.Version <= 2
+	return a.Version >= 0 && a.Version <= 3
+}
+
+func (a *AddPartitionsToTxnResponse) isFlexible() bool {
+	return a.isFlexibleVersion(a.Version)
+}
+
+func (a *AddPartitionsToTxnResponse) isFlexibleVersion(version int16) bool {
+	return version >= 3
 }
 
 func (a *AddPartitionsToTxnResponse) requiredVersion() KafkaVersion {
 	switch a.Version {
+	case 3:
+		return V2_8_0_0
 	case 2:
 		return V2_7_0_0
 	case 1:
@@ -112,7 +140,8 @@ type PartitionError struct {
 
 func (p *PartitionError) encode(pe packetEncoder) error {
 	pe.putInt32(p.Partition)
-	pe.putInt16(int16(p.Err))
+	pe.putKError(p.Err)
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
@@ -121,11 +150,11 @@ func (p *PartitionError) decode(pd packetDecoder, version int16) (err error) {
 		return err
 	}
 
-	kerr, err := pd.getInt16()
+	p.Err, err = pd.getKError()
 	if err != nil {
 		return err
 	}
-	p.Err = KError(kerr)
 
-	return nil
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }

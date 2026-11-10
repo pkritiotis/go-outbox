@@ -10,30 +10,37 @@ type EndTxnResponse struct {
 	Err          KError
 }
 
+func (e *EndTxnResponse) setVersion(v int16) {
+	e.Version = v
+}
+
 func (e *EndTxnResponse) encode(pe packetEncoder) error {
-	pe.putInt32(int32(e.ThrottleTime / time.Millisecond))
-	pe.putInt16(int16(e.Err))
+	pe.putDurationMs(e.ThrottleTime)
+	pe.putKError(e.Err)
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
 func (e *EndTxnResponse) decode(pd packetDecoder, version int16) (err error) {
-	throttleTime, err := pd.getInt32()
-	if err != nil {
+	e.Version = version
+	if e.ThrottleTime, err = pd.getDurationMs(); err != nil {
 		return err
 	}
-	e.ThrottleTime = time.Duration(throttleTime) * time.Millisecond
 
-	kerr, err := pd.getInt16()
+	e.Err, err = pd.getKError()
 	if err != nil {
 		return err
 	}
-	e.Err = KError(kerr)
+
+	if _, err = pd.getEmptyTaggedFieldArray(); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 func (e *EndTxnResponse) key() int16 {
-	return 26
+	return apiKeyEndTxn
 }
 
 func (e *EndTxnResponse) version() int16 {
@@ -41,15 +48,28 @@ func (e *EndTxnResponse) version() int16 {
 }
 
 func (r *EndTxnResponse) headerVersion() int16 {
+	if r.Version >= 3 {
+		return 1
+	}
 	return 0
 }
 
 func (e *EndTxnResponse) isValidVersion() bool {
-	return e.Version >= 0 && e.Version <= 2
+	return e.Version >= 0 && e.Version <= 3
+}
+
+func (e *EndTxnResponse) isFlexible() bool {
+	return e.isFlexibleVersion(e.Version)
+}
+
+func (e *EndTxnResponse) isFlexibleVersion(version int16) bool {
+	return version >= 3
 }
 
 func (e *EndTxnResponse) requiredVersion() KafkaVersion {
 	switch e.Version {
+	case 3:
+		return V2_8_0_0
 	case 2:
 		return V2_7_0_0
 	case 1:

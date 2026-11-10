@@ -8,8 +8,6 @@ func (u Uuid) String() string {
 	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(u[:])
 }
 
-var NullUUID = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-
 type MetadataRequest struct {
 	// Version defines the protocol version to use for encode and decode
 	Version int16
@@ -17,17 +15,21 @@ type MetadataRequest struct {
 	Topics []string
 	// AllowAutoTopicCreation contains a If this is true, the broker may auto-create topics that we requested which do not already exist, if it is configured to do so.
 	AllowAutoTopicCreation             bool
-	IncludeClusterAuthorizedOperations bool // version 8 and up
+	IncludeClusterAuthorizedOperations bool // versions 8 to 10
 	IncludeTopicAuthorizedOperations   bool // version 8 and up
+}
+
+func (r *MetadataRequest) setVersion(v int16) {
+	r.Version = v
 }
 
 func NewMetadataRequest(version KafkaVersion, topics []string) *MetadataRequest {
 	m := &MetadataRequest{Topics: topics}
 	if version.IsAtLeast(V2_8_0_0) {
-		m.Version = 10
+		m.Version = 11
 	} else if version.IsAtLeast(V2_4_0_0) {
 		m.Version = 9
-	} else if version.IsAtLeast(V2_4_0_0) {
+	} else if version.IsAtLeast(V2_3_0_0) {
 		m.Version = 8
 	} else if version.IsAtLeast(V2_1_0_0) {
 		m.Version = 7
@@ -46,92 +48,64 @@ func NewMetadataRequest(version KafkaVersion, topics []string) *MetadataRequest 
 }
 
 func (r *MetadataRequest) encode(pe packetEncoder) (err error) {
-	if r.Version < 0 || r.Version > 10 {
+	if r.Version < 0 || r.Version > 11 {
 		return PacketEncodingError{"invalid or unsupported MetadataRequest version field"}
 	}
 	if r.Version == 0 || len(r.Topics) > 0 {
-		if r.Version < 9 {
-			err := pe.putArrayLength(len(r.Topics))
-			if err != nil {
-				return err
-			}
-
-			for i := range r.Topics {
-				err = pe.putString(r.Topics[i])
-				if err != nil {
-					return err
-				}
-			}
-		} else if r.Version == 9 {
-			pe.putCompactArrayLength(len(r.Topics))
+		if err := pe.putArrayLength(len(r.Topics)); err != nil {
+			return err
+		}
+		if r.Version <= 9 {
 			for _, topicName := range r.Topics {
-				if err := pe.putCompactString(topicName); err != nil {
+				if err := pe.putString(topicName); err != nil {
 					return err
 				}
 				pe.putEmptyTaggedFieldArray()
 			}
-		} else { // r.Version = 10
-			pe.putCompactArrayLength(len(r.Topics))
+		} else { // r.Version >= 10
 			for _, topicName := range r.Topics {
-				if err := pe.putRawBytes(NullUUID); err != nil {
+				if err := pe.putUuid(Uuid{}); err != nil {
 					return err
 				}
 				// Avoid implicit memory aliasing in for loop
 				tn := topicName
-				if err := pe.putNullableCompactString(&tn); err != nil {
+				if err := pe.putNullableString(&tn); err != nil {
 					return err
 				}
 				pe.putEmptyTaggedFieldArray()
 			}
 		}
 	} else {
-		if r.Version < 9 {
-			pe.putInt32(-1)
-		} else {
-			pe.putCompactArrayLength(-1)
+		if err := pe.putArrayLength(-1); err != nil {
+			return err
 		}
 	}
 
 	if r.Version > 3 {
 		pe.putBool(r.AllowAutoTopicCreation)
 	}
-	if r.Version > 7 {
+	if r.Version >= 8 && r.Version <= 10 {
 		pe.putBool(r.IncludeClusterAuthorizedOperations)
+	}
+	if r.Version > 7 {
 		pe.putBool(r.IncludeTopicAuthorizedOperations)
 	}
-	if r.Version > 8 {
-		pe.putEmptyTaggedFieldArray()
-	}
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
 func (r *MetadataRequest) decode(pd packetDecoder, version int16) (err error) {
 	r.Version = version
-	if r.Version < 9 {
-		size, err := pd.getInt32()
-		if err != nil {
-			return err
-		}
-		if size > 0 {
-			r.Topics = make([]string, size)
-			for i := range r.Topics {
-				topic, err := pd.getString()
-				if err != nil {
-					return err
-				}
-				r.Topics[i] = topic
-			}
-		}
-	} else if r.Version == 9 {
-		size, err := pd.getCompactArrayLength()
-		if err != nil {
-			return err
-		}
-		if size > 0 {
-			r.Topics = make([]string, size)
-		}
+	size, err := pd.getArrayLength()
+	if err != nil {
+		return err
+	}
+	if size > 0 {
+		r.Topics = make([]string, size)
+	}
+	if version <= 9 {
 		for i := range r.Topics {
-			topic, err := pd.getCompactString()
+			topic, err := pd.getString()
 			if err != nil {
 				return err
 			}
@@ -140,20 +114,12 @@ func (r *MetadataRequest) decode(pd packetDecoder, version int16) (err error) {
 				return err
 			}
 		}
-	} else { // version 10+
-		size, err := pd.getCompactArrayLength()
-		if err != nil {
-			return err
-		}
-
-		if size > 0 {
-			r.Topics = make([]string, size)
-		}
+	} else {
 		for i := range r.Topics {
-			if _, err = pd.getRawBytes(16); err != nil { // skip UUID
+			if _, err = pd.getUuid(); err != nil { // skip UUID
 				return err
 			}
-			topic, err := pd.getCompactNullableString()
+			topic, err := pd.getNullableString()
 			if err != nil {
 				return err
 			}
@@ -173,28 +139,24 @@ func (r *MetadataRequest) decode(pd packetDecoder, version int16) (err error) {
 		}
 	}
 
+	if r.Version >= 8 && r.Version <= 10 {
+		if r.IncludeClusterAuthorizedOperations, err = pd.getBool(); err != nil {
+			return err
+		}
+	}
+
 	if r.Version > 7 {
-		includeClusterAuthz, err := pd.getBool()
-		if err != nil {
-			return err
-		}
-		r.IncludeClusterAuthorizedOperations = includeClusterAuthz
-		includeTopicAuthz, err := pd.getBool()
-		if err != nil {
-			return err
-		}
-		r.IncludeTopicAuthorizedOperations = includeTopicAuthz
-	}
-	if r.Version > 8 {
-		if _, err := pd.getEmptyTaggedFieldArray(); err != nil {
+		if r.IncludeTopicAuthorizedOperations, err = pd.getBool(); err != nil {
 			return err
 		}
 	}
-	return nil
+
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }
 
 func (r *MetadataRequest) key() int16 {
-	return 3
+	return apiKeyMetadata
 }
 
 func (r *MetadataRequest) version() int16 {
@@ -209,12 +171,20 @@ func (r *MetadataRequest) headerVersion() int16 {
 }
 
 func (r *MetadataRequest) isValidVersion() bool {
-	return r.Version >= 0 && r.Version <= 10
+	return r.Version >= 0 && r.Version <= 11
+}
+
+func (r *MetadataRequest) isFlexible() bool {
+	return r.isFlexibleVersion(r.Version)
+}
+
+func (r *MetadataRequest) isFlexibleVersion(version int16) bool {
+	return version >= 9
 }
 
 func (r *MetadataRequest) requiredVersion() KafkaVersion {
 	switch r.Version {
-	case 10:
+	case 10, 11:
 		return V2_8_0_0
 	case 9:
 		return V2_4_0_0

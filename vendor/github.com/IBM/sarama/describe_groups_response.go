@@ -13,6 +13,10 @@ type DescribeGroupsResponse struct {
 	Groups []*GroupDescription
 }
 
+func (r *DescribeGroupsResponse) setVersion(v int16) {
+	r.Version = v
+}
+
 func (r *DescribeGroupsResponse) encode(pe packetEncoder) (err error) {
 	if r.Version >= 1 {
 		pe.putInt32(r.ThrottleTimeMs)
@@ -27,6 +31,7 @@ func (r *DescribeGroupsResponse) encode(pe packetEncoder) (err error) {
 		}
 	}
 
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
@@ -37,11 +42,15 @@ func (r *DescribeGroupsResponse) decode(pd packetDecoder, version int16) (err er
 			return err
 		}
 	}
-	if numGroups, err := pd.getArrayLength(); err != nil {
+	numGroups, err := pd.getArrayLength()
+	if err != nil {
 		return err
+	}
+	if numGroups < 0 {
+		return errInvalidArrayLength
 	} else if numGroups > 0 {
 		r.Groups = make([]*GroupDescription, numGroups)
-		for i := 0; i < numGroups; i++ {
+		for i := range numGroups {
 			block := &GroupDescription{}
 			if err := block.decode(pd, r.Version); err != nil {
 				return err
@@ -50,11 +59,12 @@ func (r *DescribeGroupsResponse) decode(pd packetDecoder, version int16) (err er
 		}
 	}
 
-	return nil
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }
 
 func (r *DescribeGroupsResponse) key() int16 {
-	return 15
+	return apiKeyDescribeGroups
 }
 
 func (r *DescribeGroupsResponse) version() int16 {
@@ -62,15 +72,28 @@ func (r *DescribeGroupsResponse) version() int16 {
 }
 
 func (r *DescribeGroupsResponse) headerVersion() int16 {
+	if r.Version >= 5 {
+		return 1
+	}
 	return 0
 }
 
 func (r *DescribeGroupsResponse) isValidVersion() bool {
-	return r.Version >= 0 && r.Version <= 4
+	return r.Version >= 0 && r.Version <= 5
+}
+
+func (r *DescribeGroupsResponse) isFlexible() bool {
+	return r.isFlexibleVersion(r.Version)
+}
+
+func (r *DescribeGroupsResponse) isFlexibleVersion(version int16) bool {
+	return version >= 5
 }
 
 func (r *DescribeGroupsResponse) requiredVersion() KafkaVersion {
 	switch r.Version {
+	case 5:
+		return V2_4_0_0
 	case 4:
 		return V2_4_0_0
 	case 3:
@@ -144,6 +167,7 @@ func (gd *GroupDescription) encode(pe packetEncoder, version int16) (err error) 
 		pe.putInt32(gd.AuthorizedOperations)
 	}
 
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
@@ -168,11 +192,15 @@ func (gd *GroupDescription) decode(pd packetDecoder, version int16) (err error) 
 		return err
 	}
 
-	if numMembers, err := pd.getArrayLength(); err != nil {
+	numMembers, err := pd.getArrayLength()
+	if err != nil {
 		return err
+	}
+	if numMembers < 0 {
+		return errInvalidArrayLength
 	} else if numMembers > 0 {
 		gd.Members = make(map[string]*GroupMemberDescription, numMembers)
-		for i := 0; i < numMembers; i++ {
+		for range numMembers {
 			block := &GroupMemberDescription{}
 			if err := block.decode(pd, gd.Version); err != nil {
 				return err
@@ -187,7 +215,8 @@ func (gd *GroupDescription) decode(pd packetDecoder, version int16) (err error) 
 		}
 	}
 
-	return nil
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }
 
 // GroupMemberDescription contains the group members.
@@ -235,6 +264,7 @@ func (gmd *GroupMemberDescription) encode(pe packetEncoder, version int16) (err 
 		return err
 	}
 
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
@@ -261,7 +291,8 @@ func (gmd *GroupMemberDescription) decode(pd packetDecoder, version int16) (err 
 		return err
 	}
 
-	return nil
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }
 
 func (gmd *GroupMemberDescription) GetMemberAssignment() (*ConsumerGroupMemberAssignment, error) {

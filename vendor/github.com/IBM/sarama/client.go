@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -97,13 +98,13 @@ type Client interface {
 	// in local cache. This function only works on Kafka 0.8.2 and higher.
 	RefreshCoordinator(consumerGroup string) error
 
-	// Coordinator returns the coordinating broker for a transaction id. It will
+	// TransactionCoordinator returns the coordinating broker for a transaction id. It will
 	// return a locally cached value if it's available. You can call
 	// RefreshCoordinator to update the cached value. This function only works on
 	// Kafka 0.11.0.0 and higher.
 	TransactionCoordinator(transactionID string) (*Broker, error)
 
-	// RefreshCoordinator retrieves the coordinator for a transaction id and stores it
+	// RefreshTransactionCoordinator retrieves the coordinator for a transaction id and stores it
 	// in local cache. This function only works on Kafka 0.11.0.0 and higher.
 	RefreshTransactionCoordinator(transactionID string) error
 
@@ -112,6 +113,9 @@ type Client interface {
 
 	// LeastLoadedBroker retrieves broker that has the least responses pending
 	LeastLoadedBroker() *Broker
+
+	// PartitionNotReadable checks if partition is not readable
+	PartitionNotReadable(topic string, partition int32) bool
 
 	// Close shuts down all broker connections managed by this client. It is required
 	// to call this function before a client object passes out of scope, as it will
@@ -140,7 +144,7 @@ type client struct {
 	// updateMetadataMs stores the time at which metadata was lasted updated.
 	// Note: this accessed atomically so must be the first word in the struct
 	// as per golang/go#41970
-	updateMetadataMs int64
+	updateMetadataMs atomic.Int64
 
 	conf           *Config
 	closer, closed chan none // for shutting down background metadata updater
@@ -155,6 +159,7 @@ type client struct {
 	brokers                 map[int32]*Broker                       // maps broker ids to brokers
 	metadata                map[string]map[int32]*PartitionMetadata // maps topics to partition ids to metadata
 	metadataTopics          map[string]none                         // topics that need to collect metadata
+	topicIDs                map[string]Uuid                         // last topic id seen per topic, to tell a re-created topic from a lagging broker
 	coordinators            map[string]int32                        // Maps consumer group names to coordinating broker IDs
 	transactionCoordinators map[string]int32                        // Maps transaction ids to coordinating broker IDs
 
@@ -163,6 +168,8 @@ type client struct {
 	cachedPartitionsResults map[string][maxPartitionIndex][]int32
 
 	lock sync.RWMutex // protects access to the maps that hold cluster state.
+
+	metadataRefresh metadataRefresh
 }
 
 // NewClient creates a new Client. It connects to one of the given broker addresses
@@ -189,7 +196,6 @@ func NewClient(addrs []string, conf *Config) (Client, error) {
 			conf.Version = V1_0_0_0
 		}
 	}
-
 	client := &client{
 		conf:                    conf,
 		closer:                  make(chan none),
@@ -200,6 +206,18 @@ func NewClient(addrs []string, conf *Config) (Client, error) {
 		cachedPartitionsResults: make(map[string][maxPartitionIndex][]int32),
 		coordinators:            make(map[string]int32),
 		transactionCoordinators: make(map[string]int32),
+	}
+	refresh := func(topics []string) error {
+		deadline := time.Time{}
+		if client.conf.Metadata.Timeout > 0 {
+			deadline = time.Now().Add(client.conf.Metadata.Timeout)
+		}
+		return client.tryRefreshMetadata(topics, client.conf.Metadata.Retry.Max, deadline)
+	}
+	if conf.Metadata.SingleFlight {
+		client.metadataRefresh = newSingleFlightRefresher(refresh)
+	} else {
+		client.metadataRefresh = refresh
 	}
 
 	if conf.Net.ResolveCanonicalBootstrapServers {
@@ -258,7 +276,7 @@ func (client *client) Broker(brokerID int32) (*Broker, error) {
 }
 
 func (client *client) InitProducerID() (*InitProducerIDResponse, error) {
-	// FIXME: this InitProducerID seems to only be called from client_test.go (TestInitProducerIDConnectionRefused) and has been superceded by transaction_manager.go?
+	// FIXME: this InitProducerID seems to only be called from client_test.go (TestInitProducerIDConnectionRefused) and has been superseded by transaction_manager.go?
 	brokerErrors := make([]error, 0)
 	for broker := client.LeastLoadedBroker(); broker != nil; broker = client.LeastLoadedBroker() {
 		request := &InitProducerIDRequest{}
@@ -283,9 +301,9 @@ func (client *client) InitProducerID() (*InitProducerIDResponse, error) {
 		} else {
 			// some error, remove that broker and try again
 			Logger.Printf("Client got error from broker %d when issuing InitProducerID : %v\n", broker.ID(), err)
-			_ = broker.Close()
 			brokerErrors = append(brokerErrors, err)
 			client.deregisterBroker(broker)
+			_ = broker.Close()
 		}
 	}
 
@@ -501,17 +519,10 @@ func (client *client) RefreshMetadata(topics ...string) error {
 	// Prior to 0.8.2, Kafka will throw exceptions on an empty topic and not return a proper
 	// error. This handles the case by returning an error instead of sending it
 	// off to Kafka. See: https://github.com/IBM/sarama/pull/38#issuecomment-26362310
-	for _, topic := range topics {
-		if topic == "" {
-			return ErrInvalidTopic // this is the error that 0.8.2 and later correctly return
-		}
+	if slices.Contains(topics, "") {
+		return ErrInvalidTopic // this is the error that 0.8.2 and later correctly return
 	}
-
-	deadline := time.Time{}
-	if client.conf.Metadata.Timeout > 0 {
-		deadline = time.Now().Add(client.conf.Metadata.Timeout)
-	}
-	return client.tryRefreshMetadata(topics, client.conf.Metadata.Retry.Max, deadline)
+	return client.metadataRefresh(topics)
 }
 
 func (client *client) GetOffset(topic string, partitionID int32, timestamp int64) (int64, error) {
@@ -551,7 +562,6 @@ func (client *client) Controller() (*Broker, error) {
 		return nil, ErrControllerNotAvailable
 	}
 
-	_ = controller.Open(client.conf)
 	return controller, nil
 }
 
@@ -583,7 +593,6 @@ func (client *client) RefreshController() (*Broker, error) {
 		return nil, ErrControllerNotAvailable
 	}
 
-	_ = controller.Open(client.conf)
 	return controller, nil
 }
 
@@ -605,7 +614,6 @@ func (client *client) Coordinator(consumerGroup string) (*Broker, error) {
 		return nil, ErrConsumerCoordinatorNotAvailable
 	}
 
-	_ = coordinator.Open(client.conf)
 	return coordinator, nil
 }
 
@@ -644,7 +652,6 @@ func (client *client) TransactionCoordinator(transactionID string) (*Broker, err
 		return nil, ErrConsumerCoordinatorNotAvailable
 	}
 
-	_ = coordinator.Open(client.conf)
 	return coordinator, nil
 }
 
@@ -674,10 +681,43 @@ func (client *client) randomizeSeedBrokers(addrs []string) {
 	}
 }
 
+func (client *client) checkSeedBrokersHealth(brokers []*Broker) {
+	if len(brokers) == 0 {
+		return
+	}
+
+	for _, broker := range brokers {
+		if err := broker.getSockError(); err != nil {
+			Logger.Printf("client/seedbrokers close seed broker #%d at %s due to socket error: %v", broker.ID(), broker.Addr(), err)
+			safeAsyncClose(broker)
+		}
+	}
+}
+
+func (client *client) checkBrokersHealth() {
+	for id, broker := range client.brokers {
+		if err := broker.getSockError(); err != nil {
+			Logger.Printf("client/brokers close broker #%d at %s due to socket error: %v", broker.ID(), broker.Addr(), err)
+			safeAsyncClose(broker)
+			delete(client.brokers, id)
+		}
+	}
+
+	client.checkSeedBrokersHealth(client.seedBrokers)
+	client.checkSeedBrokersHealth(client.deadSeeds)
+}
+
 func (client *client) updateBroker(brokers []*Broker) {
+	if client.brokers == nil {
+		return
+	}
+
 	currentBroker := make(map[int32]*Broker, len(brokers))
 
 	for _, broker := range brokers {
+		if broker == nil {
+			continue
+		}
 		currentBroker[broker.ID()] = broker
 		if client.brokers[broker.ID()] == nil { // add new broker
 			client.brokers[broker.ID()] = broker
@@ -718,13 +758,16 @@ func (client *client) registerBroker(broker *Broker) {
 }
 
 // deregisterBroker removes a broker from the broker list, and if it's
-// not in the broker list, removes it from seedBrokers.
+// not in the broker list, removes it from seedBrokers. Deregister a failed
+// broker before closing it: while it is still listed, a concurrent lookup can
+// reopen it, and nothing would close that connection.
 func (client *client) deregisterBroker(broker *Broker) {
 	client.lock.Lock()
 	defer client.lock.Unlock()
 
-	_, ok := client.brokers[broker.ID()]
-	if ok {
+	// the broker may have been replaced under its ID (e.g. by a metadata
+	// refresh) since the caller obtained it, so only remove this instance
+	if client.brokers[broker.ID()] == broker {
 		Logger.Printf("client/brokers deregistered broker #%d at %s", broker.ID(), broker.Addr())
 		delete(client.brokers, broker.ID())
 		return
@@ -749,6 +792,11 @@ func (client *client) resurrectDeadBrokers() {
 func (client *client) LeastLoadedBroker() *Broker {
 	client.lock.RLock()
 	defer client.lock.RUnlock()
+
+	// Close leaves seedBrokers set; opening one now would never be closed
+	if client.brokers == nil {
+		return nil
+	}
 
 	var leastLoadedBroker *Broker
 	pendingRequests := math.MaxInt
@@ -856,22 +904,7 @@ func (client *client) getOffset(topic string, partitionID int32, timestamp int64
 		return -1, err
 	}
 
-	request := &OffsetRequest{}
-	if client.conf.Version.IsAtLeast(V2_1_0_0) {
-		// Version 4 adds the current leader epoch, which is used for fencing.
-		request.Version = 4
-	} else if client.conf.Version.IsAtLeast(V2_0_0_0) {
-		// Version 3 is the same as version 2.
-		request.Version = 3
-	} else if client.conf.Version.IsAtLeast(V0_11_0_0) {
-		// Version 2 adds the isolation level, which is used for transactional reads.
-		request.Version = 2
-	} else if client.conf.Version.IsAtLeast(V0_10_1_0) {
-		// Version 1 removes MaxNumOffsets.  From this version forward, only a single
-		// offset can be returned.
-		request.Version = 1
-	}
-
+	request := NewOffsetRequest(client.conf.Version)
 	request.AddBlock(topic, partitionID, timestamp, 1)
 
 	response, err := broker.GetAvailableOffsets(request)
@@ -911,6 +944,10 @@ func (client *client) backgroundMetadataUpdater() {
 		select {
 		case <-ticker.C:
 			if err := client.refreshMetadata(); err != nil {
+				// expected no-op, not worth logging every tick
+				if errors.Is(err, ErrNoTopicsToUpdateMetadata) {
+					continue
+				}
 				Logger.Println("Client background metadata update:", err)
 			}
 		case <-client.closer:
@@ -949,7 +986,7 @@ func (client *client) tryRefreshMetadata(topics []string, attemptsRemaining int,
 	}
 	retry := func(err error) error {
 		if attemptsRemaining > 0 {
-			backoff := client.computeBackoff(attemptsRemaining)
+			backoff := computeMetadataBackoff(client.conf, attemptsRemaining)
 			if pastDeadline(backoff) {
 				Logger.Println("client/metadata skipping last retries as we would go past the metadata timeout")
 				return err
@@ -958,7 +995,7 @@ func (client *client) tryRefreshMetadata(topics []string, attemptsRemaining int,
 				time.Sleep(backoff)
 			}
 
-			t := atomic.LoadInt64(&client.updateMetadataMs)
+			t := client.updateMetadataMs.Load()
 			if time.Since(time.UnixMilli(t)) < backoff {
 				return err
 			}
@@ -983,7 +1020,6 @@ func (client *client) tryRefreshMetadata(topics []string, attemptsRemaining int,
 
 		req := NewMetadataRequest(client.conf.Version, topics)
 		req.AllowAutoTopicCreation = allowAutoTopicCreation
-		atomic.StoreInt64(&client.updateMetadataMs, time.Now().UnixMilli())
 
 		response, err := broker.GetMetadata(req)
 		var kerror KError
@@ -991,9 +1027,9 @@ func (client *client) tryRefreshMetadata(topics []string, attemptsRemaining int,
 		if err == nil {
 			// When talking to the startup phase of a broker, it is possible to receive an empty metadata set. We should remove that broker and try next broker (https://issues.apache.org/jira/browse/KAFKA-7924).
 			if len(response.Brokers) == 0 {
-				Logger.Println("client/metadata receiving empty brokers from the metadata response when requesting the broker #%d at %s", broker.ID(), broker.addr)
-				_ = broker.Close()
+				Logger.Printf("client/metadata receiving empty brokers from the metadata response when requesting the broker #%d at %s", broker.ID(), broker.addr)
 				client.deregisterBroker(broker)
+				_ = broker.Close()
 				continue
 			}
 			allKnownMetaData := len(topics) == 0
@@ -1001,8 +1037,11 @@ func (client *client) tryRefreshMetadata(topics []string, attemptsRemaining int,
 			shouldRetry, err := client.updateMetadata(response, allKnownMetaData)
 			if shouldRetry {
 				Logger.Println("client/metadata found some partitions to be leaderless")
-				return retry(err) // note: err can be nil
+				return retry(err)
 			}
+			// only update on success; if we updated on every attempt then
+			// concurrent refreshes would short-circuit each other's retries
+			client.updateMetadataMs.Store(time.Now().UnixMilli())
 			return err
 		} else if errors.As(err, &packetEncodingError) {
 			// didn't even send, return the error
@@ -1020,14 +1059,14 @@ func (client *client) tryRefreshMetadata(topics []string, attemptsRemaining int,
 			}
 			// else remove that broker and try again
 			Logger.Printf("client/metadata got error from broker %d while fetching metadata: %v\n", broker.ID(), err)
-			_ = broker.Close()
 			client.deregisterBroker(broker)
+			_ = broker.Close()
 		} else {
 			// some other error, remove that broker and try again
 			Logger.Printf("client/metadata got error from broker %d while fetching metadata: %v\n", broker.ID(), err)
 			brokerErrors = append(brokerErrors, err)
-			_ = broker.Close()
 			client.deregisterBroker(broker)
+			_ = broker.Close()
 		}
 	}
 
@@ -1043,13 +1082,26 @@ func (client *client) tryRefreshMetadata(topics []string, attemptsRemaining int,
 }
 
 // if no fatal error, returns a list of topics that need retrying due to ErrLeaderNotAvailable
-func (client *client) updateMetadata(data *MetadataResponse, allKnownMetaData bool) (retry bool, err error) {
+func (client *client) updateMetadata(data *MetadataResponse, allKnownMetaData bool) (bool, error) {
 	if client.Closed() {
-		return
+		return false, nil
 	}
 
 	client.lock.Lock()
 	defer client.lock.Unlock()
+
+	// Close may have run since the check above, leaving nil maps
+	if client.brokers == nil {
+		return false, nil
+	}
+
+	// Check health of existing brokers, including seed brokers, dead
+	// seed brokers, and registered brokers.
+	// - if error occurred on broker's tcp socket, close the tcp
+	//   connection.
+	// - if it's seed broker or dead seed broker, remove it from
+	//   the list.
+	client.checkBrokersHealth()
 
 	// For all the brokers we received:
 	// - if it is a new ID, save it
@@ -1060,11 +1112,14 @@ func (client *client) updateMetadata(data *MetadataResponse, allKnownMetaData bo
 
 	client.controllerID = data.ControllerID
 
+	previous := client.metadata
 	if allKnownMetaData {
 		client.metadata = make(map[string]map[int32]*PartitionMetadata)
 		client.metadataTopics = make(map[string]none)
 		client.cachedPartitionsResults = make(map[string][maxPartitionIndex][]int32)
 	}
+	topicErrs := make(refreshError)
+	retry := false
 	for _, topic := range data.Topics {
 		// topics must be added firstly to `metadataTopics` to guarantee that all
 		// requested topics must be recorded to keep them trackable for periodically
@@ -1072,6 +1127,7 @@ func (client *client) updateMetadata(data *MetadataResponse, allKnownMetaData bo
 		if _, exists := client.metadataTopics[topic.Name]; !exists {
 			client.metadataTopics[topic.Name] = none{}
 		}
+		cached := previous[topic.Name]
 		delete(client.metadata, topic.Name)
 		delete(client.cachedPartitionsResults, topic.Name)
 
@@ -1079,24 +1135,39 @@ func (client *client) updateMetadata(data *MetadataResponse, allKnownMetaData bo
 		case ErrNoError:
 			// no-op
 		case ErrInvalidTopic, ErrTopicAuthorizationFailed: // don't retry, don't store partial results
-			err = topic.Err
+			topicErrs.addError(topic.Name, topic.Err)
 			continue
 		case ErrUnknownTopicOrPartition: // retry, do not store partial partition results
-			err = topic.Err
+			topicErrs.addError(topic.Name, topic.Err)
 			retry = true
 			continue
 		case ErrLeaderNotAvailable: // retry, but store partial partition results
+			topicErrs.addError(topic.Name, topic.Err)
 			retry = true
 		default: // don't retry, don't store partial results
 			Logger.Printf("Unexpected topic-level metadata error: %s", topic.Err)
-			err = topic.Err
+			topicErrs.addError(topic.Name, topic.Err)
 			continue
 		}
 
+		// a broker with a lagging metadata cache can report an older leader
+		// epoch; keep the newer entry unless the topic id shows the topic was
+		// re-created (leader epochs restart then)
+		sameTopic := topic.Uuid != (Uuid{}) && topic.Uuid == client.topicIDs[topic.Name]
+		if client.topicIDs == nil {
+			client.topicIDs = make(map[string]Uuid)
+		}
+		client.topicIDs[topic.Name] = topic.Uuid
+
 		client.metadata[topic.Name] = make(map[int32]*PartitionMetadata, len(topic.Partitions))
 		for _, partition := range topic.Partitions {
+			if newer, ok := cached[partition.ID]; ok && sameTopic &&
+				partition.LeaderEpoch >= 0 && partition.LeaderEpoch < newer.LeaderEpoch {
+				partition = newer
+			}
 			client.metadata[topic.Name][partition.ID] = partition
 			if errors.Is(partition.Err, ErrLeaderNotAvailable) {
+				topicErrs.addError(topic.Name, partition.Err)
 				retry = true
 			}
 		}
@@ -1107,14 +1178,17 @@ func (client *client) updateMetadata(data *MetadataResponse, allKnownMetaData bo
 		client.cachedPartitionsResults[topic.Name] = partitionCache
 	}
 
-	return
+	if len(topicErrs) == 0 {
+		return retry, nil
+	}
+	return retry, topicErrs
 }
 
 func (client *client) cachedCoordinator(consumerGroup string) *Broker {
 	client.lock.RLock()
 	defer client.lock.RUnlock()
 	if coordinatorID, ok := client.coordinators[consumerGroup]; ok {
-		return client.brokers[coordinatorID]
+		return client.openCached(client.brokers[coordinatorID])
 	}
 	return nil
 }
@@ -1123,7 +1197,7 @@ func (client *client) cachedTransactionCoordinator(transactionID string) *Broker
 	client.lock.RLock()
 	defer client.lock.RUnlock()
 	if coordinatorID, ok := client.transactionCoordinators[transactionID]; ok {
-		return client.brokers[coordinatorID]
+		return client.openCached(client.brokers[coordinatorID])
 	}
 	return nil
 }
@@ -1132,22 +1206,33 @@ func (client *client) cachedController() *Broker {
 	client.lock.RLock()
 	defer client.lock.RUnlock()
 
-	return client.brokers[client.controllerID]
+	return client.openCached(client.brokers[client.controllerID])
 }
 
-func (client *client) computeBackoff(attemptsRemaining int) time.Duration {
-	if client.conf.Metadata.Retry.BackoffFunc != nil {
-		maxRetries := client.conf.Metadata.Retry.Max
-		retries := maxRetries - attemptsRemaining
-		return client.conf.Metadata.Retry.BackoffFunc(retries, maxRetries)
+// openCached opens b while the caller holds the client lock, as cachedLeader
+// does. Opened after the lock is released, a broker that was replaced or
+// closed in between reconnects and is never closed again. The caller must
+// hold the read or write lock.
+func (client *client) openCached(b *Broker) *Broker {
+	if b != nil {
+		_ = b.Open(client.conf)
 	}
-	return client.conf.Metadata.Retry.Backoff
+	return b
+}
+
+func computeMetadataBackoff(conf *Config, attemptsRemaining int) time.Duration {
+	if conf.Metadata.Retry.BackoffFunc != nil {
+		maxRetries := conf.Metadata.Retry.Max
+		retries := maxRetries - attemptsRemaining
+		return conf.Metadata.Retry.BackoffFunc(retries, maxRetries)
+	}
+	return conf.Metadata.Retry.Backoff
 }
 
 func (client *client) findCoordinator(coordinatorKey string, coordinatorType CoordinatorType, attemptsRemaining int) (*FindCoordinatorResponse, error) {
 	retry := func(err error) (*FindCoordinatorResponse, error) {
 		if attemptsRemaining > 0 {
-			backoff := client.computeBackoff(attemptsRemaining)
+			backoff := computeMetadataBackoff(client.conf, attemptsRemaining)
 			attemptsRemaining--
 			Logger.Printf("client/coordinator retrying after %dms... (%d attempts remaining)\n", backoff/time.Millisecond, attemptsRemaining)
 			time.Sleep(backoff)
@@ -1172,6 +1257,10 @@ func (client *client) findCoordinator(coordinatorKey string, coordinatorType Coo
 		if client.conf.Version.IsAtLeast(V2_0_0_0) {
 			request.Version = 2
 		}
+		// Version 3 is the first flexible version
+		if client.conf.Version.IsAtLeast(V2_4_0_0) {
+			request.Version = 3
+		}
 
 		response, err := broker.FindCoordinator(request)
 		if err != nil {
@@ -1181,9 +1270,9 @@ func (client *client) findCoordinator(coordinatorKey string, coordinatorType Coo
 			if errors.As(err, &packetEncodingError) {
 				return nil, err
 			} else {
-				_ = broker.Close()
 				brokerErrors = append(brokerErrors, err)
 				client.deregisterBroker(broker)
+				_ = broker.Close()
 				continue
 			}
 		}
@@ -1282,4 +1371,15 @@ type nopCloserClient struct {
 // client's Close() method.
 func (ncc *nopCloserClient) Close() error {
 	return nil
+}
+
+func (client *client) PartitionNotReadable(topic string, partition int32) bool {
+	client.lock.RLock()
+	defer client.lock.RUnlock()
+
+	pm := client.metadata[topic][partition]
+	if pm == nil {
+		return true
+	}
+	return pm.Leader == -1
 }

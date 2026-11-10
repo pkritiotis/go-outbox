@@ -2,6 +2,12 @@ package sarama
 
 import "sync"
 
+var expectationsPool = sync.Pool{
+	New: func() any {
+		return make(chan *ProducerError, 1)
+	},
+}
+
 // SyncProducer publishes Kafka messages, blocking until they have been acknowledged. It routes messages to the correct
 // broker, refreshing metadata as appropriate, and parses responses for errors. You must call Close() on a producer
 // to avoid leaks, it may not be garbage-collected automatically when it passes out of scope.
@@ -48,8 +54,18 @@ type SyncProducer interface {
 	// AddOffsetsToTxn add associated offsets to current transaction.
 	AddOffsetsToTxn(offsets map[string][]*PartitionOffsetMetadata, groupId string) error
 
+	// AddOffsetsToTxnWithGroupMetadata adds associated offsets to the current
+	// transaction, carrying the consumer group member metadata so the broker
+	// can fence stale members (KIP-447).
+	AddOffsetsToTxnWithGroupMetadata(offsets map[string][]*PartitionOffsetMetadata, groupMetadata *ConsumerGroupMetadata) error
+
 	// AddMessageToTxn add message offsets to current transaction.
 	AddMessageToTxn(msg *ConsumerMessage, groupId string, metadata *string) error
+
+	// AddMessageToTxnWithGroupMetadata adds the message offset to the current
+	// transaction, carrying the consumer group member metadata so the broker
+	// can fence stale members (KIP-447).
+	AddMessageToTxnWithGroupMetadata(msg *ConsumerMessage, groupMetadata *ConsumerGroupMetadata, metadata *string) error
 }
 
 type syncProducer struct {
@@ -110,11 +126,13 @@ func verifyProducerConfig(config *Config) error {
 }
 
 func (sp *syncProducer) SendMessage(msg *ProducerMessage) (partition int32, offset int64, err error) {
-	expectation := make(chan *ProducerError, 1)
+	expectation := expectationsPool.Get().(chan *ProducerError)
 	msg.expectation = expectation
 	sp.producer.Input() <- msg
-
-	if pErr := <-expectation; pErr != nil {
+	pErr := <-expectation
+	msg.expectation = nil
+	expectationsPool.Put(expectation)
+	if pErr != nil {
 		return -1, -1, pErr.Err
 	}
 
@@ -122,20 +140,24 @@ func (sp *syncProducer) SendMessage(msg *ProducerMessage) (partition int32, offs
 }
 
 func (sp *syncProducer) SendMessages(msgs []*ProducerMessage) error {
-	expectations := make(chan chan *ProducerError, len(msgs))
+	indices := make(chan int, len(msgs))
 	go func() {
-		for _, msg := range msgs {
-			expectation := make(chan *ProducerError, 1)
+		for i, msg := range msgs {
+			expectation := expectationsPool.Get().(chan *ProducerError)
 			msg.expectation = expectation
 			sp.producer.Input() <- msg
-			expectations <- expectation
+			indices <- i
 		}
-		close(expectations)
+		close(indices)
 	}()
 
 	var errors ProducerErrors
-	for expectation := range expectations {
-		if pErr := <-expectation; pErr != nil {
+	for i := range indices {
+		expectation := msgs[i].expectation
+		pErr := <-expectation
+		msgs[i].expectation = nil
+		expectationsPool.Put(expectation)
+		if pErr != nil {
 			errors = append(errors, pErr)
 		}
 	}
@@ -188,8 +210,16 @@ func (sp *syncProducer) AddOffsetsToTxn(offsets map[string][]*PartitionOffsetMet
 	return sp.producer.AddOffsetsToTxn(offsets, groupId)
 }
 
+func (sp *syncProducer) AddOffsetsToTxnWithGroupMetadata(offsets map[string][]*PartitionOffsetMetadata, groupMetadata *ConsumerGroupMetadata) error {
+	return sp.producer.AddOffsetsToTxnWithGroupMetadata(offsets, groupMetadata)
+}
+
 func (sp *syncProducer) AddMessageToTxn(msg *ConsumerMessage, groupId string, metadata *string) error {
 	return sp.producer.AddMessageToTxn(msg, groupId, metadata)
+}
+
+func (sp *syncProducer) AddMessageToTxnWithGroupMetadata(msg *ConsumerMessage, groupMetadata *ConsumerGroupMetadata, metadata *string) error {
+	return sp.producer.AddMessageToTxnWithGroupMetadata(msg, groupMetadata, metadata)
 }
 
 func (p *syncProducer) TxnStatus() ProducerTxnStatusFlag {

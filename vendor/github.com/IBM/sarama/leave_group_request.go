@@ -3,6 +3,7 @@ package sarama
 type MemberIdentity struct {
 	MemberId        string
 	GroupInstanceId *string
+	Reason          *string // v5, nullable
 }
 
 type LeaveGroupRequest struct {
@@ -10,6 +11,10 @@ type LeaveGroupRequest struct {
 	GroupId  string
 	MemberId string           // Removed in Version 3
 	Members  []MemberIdentity // Added in Version 3
+}
+
+func (r *LeaveGroupRequest) setVersion(v int16) {
+	r.Version = v
 }
 
 func (r *LeaveGroupRequest) encode(pe packetEncoder) error {
@@ -32,9 +37,16 @@ func (r *LeaveGroupRequest) encode(pe packetEncoder) error {
 			if err := pe.putNullableString(member.GroupInstanceId); err != nil {
 				return err
 			}
+			if r.Version >= 5 {
+				if err := pe.putNullableString(member.Reason); err != nil {
+					return err
+				}
+			}
+			pe.putEmptyTaggedFieldArray()
 		}
 	}
 
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
@@ -53,8 +65,11 @@ func (r *LeaveGroupRequest) decode(pd packetDecoder, version int16) (err error) 
 		if err != nil {
 			return err
 		}
+		if memberCount < 0 {
+			return errInvalidArrayLength
+		}
 		r.Members = make([]MemberIdentity, memberCount)
-		for i := 0; i < memberCount; i++ {
+		for i := range memberCount {
 			memberIdentity := MemberIdentity{}
 			if memberIdentity.MemberId, err = pd.getString(); err != nil {
 				return err
@@ -62,15 +77,25 @@ func (r *LeaveGroupRequest) decode(pd packetDecoder, version int16) (err error) 
 			if memberIdentity.GroupInstanceId, err = pd.getNullableString(); err != nil {
 				return err
 			}
+			if r.Version >= 5 {
+				if memberIdentity.Reason, err = pd.getNullableString(); err != nil {
+					return err
+				}
+			}
 			r.Members[i] = memberIdentity
+			_, err = pd.getEmptyTaggedFieldArray()
+			if err != nil {
+				return err
+			}
 		}
 	}
 
-	return nil
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }
 
 func (r *LeaveGroupRequest) key() int16 {
-	return 13
+	return apiKeyLeaveGroup
 }
 
 func (r *LeaveGroupRequest) version() int16 {
@@ -78,15 +103,30 @@ func (r *LeaveGroupRequest) version() int16 {
 }
 
 func (r *LeaveGroupRequest) headerVersion() int16 {
+	if r.Version >= 4 {
+		return 2
+	}
 	return 1
 }
 
 func (r *LeaveGroupRequest) isValidVersion() bool {
-	return r.Version >= 0 && r.Version <= 3
+	return r.Version >= 0 && r.Version <= 5
+}
+
+func (r *LeaveGroupRequest) isFlexible() bool {
+	return r.isFlexibleVersion(r.Version)
+}
+
+func (r *LeaveGroupRequest) isFlexibleVersion(version int16) bool {
+	return version >= 4
 }
 
 func (r *LeaveGroupRequest) requiredVersion() KafkaVersion {
 	switch r.Version {
+	case 5:
+		return V3_2_0_0
+	case 4:
+		return V2_4_0_0
 	case 3:
 		return V2_4_0_0
 	case 2:

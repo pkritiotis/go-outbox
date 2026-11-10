@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/hashicorp/go-multierror"
 )
 
 // ErrOutOfBrokers is the error returned when the client has run out of brokers to talk to because all of them errored
@@ -43,9 +41,19 @@ var ErrShuttingDown = errors.New("kafka: message received by producer in process
 // ErrMessageTooLarge is returned when the next message to consume is larger than the configured Consumer.Fetch.Max
 var ErrMessageTooLarge = errors.New("kafka: message is larger than Consumer.Fetch.Max")
 
+// ErrDecompressedBatchTooLarge is returned when a compressed record batch decompresses
+// to more than the configured limit (see MaxDecompressedBatchSize).
+var ErrDecompressedBatchTooLarge = errors.New("kafka: decompressed record batch is larger than the configured limit")
+
 // ErrConsumerOffsetNotAdvanced is returned when a partition consumer didn't advance its offset after parsing
 // a RecordBatch.
 var ErrConsumerOffsetNotAdvanced = errors.New("kafka: consumer offset was not advanced after a RecordBatch")
+
+// ErrConsumerRetriesExhausted is sent on a partition consumer's Errors channel
+// when Consumer.Retry.Max consecutive dispatch attempts have failed. The
+// partition consumer self-closes immediately after; in a consumer group this
+// ends the session and triggers a fresh rejoin.
+var ErrConsumerRetriesExhausted = errors.New("kafka: partition consumer giving up after consecutive failures")
 
 // ErrControllerNotAvailable is returned when server didn't give correct controller id. May be kafka server's version
 // is lower than 0.10.0.0.
@@ -88,10 +96,13 @@ var ErrCannotTransitionNilError = errors.New("transaction manager: cannot transi
 // ErrTxnUnableToParseResponse when response is nil
 var ErrTxnUnableToParseResponse = errors.New("transaction manager: unable to parse response")
 
-// MultiErrorFormat specifies the formatter applied to format multierrors. The
-// default implementation is a condensed version of the hashicorp/go-multierror
-// default one
-var MultiErrorFormat multierror.ErrorFormatFunc = func(es []error) string {
+// ErrUnknownMessage when the protocol message key is not recognized
+var ErrUnknownMessage = errors.New("kafka: unknown protocol message key")
+
+// MultiErrorFormat specifies the formatter applied to format multierrors.
+//
+// Deprecated: Please use [errors.Join] instead.
+func MultiErrorFormat(es []error) string {
 	if len(es) == 1 {
 		return es[0].Error()
 	}
@@ -128,15 +139,7 @@ func (err sentinelError) Unwrap() error {
 }
 
 func Wrap(sentinel error, wrapped ...error) sentinelError {
-	return sentinelError{sentinel: sentinel, wrapped: multiError(wrapped...)}
-}
-
-func multiError(wrapped ...error) error {
-	merr := multierror.Append(nil, wrapped...)
-	if MultiErrorFormat != nil {
-		merr.ErrorFormat = MultiErrorFormat
-	}
-	return merr.ErrorOrNil()
+	return sentinelError{sentinel: sentinel, wrapped: errors.Join(wrapped...)}
 }
 
 // PacketEncodingError is returned from a failure while encoding a Kafka packet. This can happen, for example,
@@ -265,6 +268,7 @@ const (
 	ErrUnstableOffsetCommit               KError = 88 // Errors.UNSTABLE_OFFSET_COMMIT
 	ErrThrottlingQuotaExceeded            KError = 89 // Errors.THROTTLING_QUOTA_EXCEEDED
 	ErrProducerFenced                     KError = 90 // Errors.PRODUCER_FENCED
+	ErrInvalidUpdateVersion               KError = 95 // Errors.INVALID_UPDATE_VERSION
 )
 
 func (err KError) Error() string {
@@ -304,7 +308,7 @@ func (err KError) Error() string {
 	case ErrOffsetsLoadInProgress:
 		return "kafka server: The coordinator is still loading offsets and cannot currently process requests"
 	case ErrConsumerCoordinatorNotAvailable:
-		return "kafka server: Offset's topic has not yet been created"
+		return "kafka server: The coordinator is not available"
 	case ErrNotCoordinatorForConsumer:
 		return "kafka server: Request was for a consumer group that is not coordinated by this broker"
 	case ErrInvalidTopic:
@@ -451,6 +455,10 @@ func (err KError) Error() string {
 		return "kafka server: This record has failed the validation on broker and hence will be rejected"
 	case ErrUnstableOffsetCommit:
 		return "kafka server: There are unstable offsets that need to be cleared"
+	case ErrThrottlingQuotaExceeded:
+		return "kafka server: The throttling quota has been exceeded"
+	case ErrInvalidUpdateVersion:
+		return "kafka server: The given update version was invalid"
 	}
 
 	return fmt.Sprintf("Unknown error, how did this happen? Error code = %d", err)

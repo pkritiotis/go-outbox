@@ -71,7 +71,7 @@ func main() {
 
 	go func() {
 		err = <-errChan
-		fmt.Printf(err.Error())
+		fmt.Println(err.Error())
 	}()
 
 	// Initialize the outbox service

@@ -13,6 +13,10 @@ func (p *GroupProtocol) decode(pd packetDecoder) (err error) {
 		return err
 	}
 	p.Metadata, err = pd.getBytes()
+	if err != nil {
+		return err
+	}
+	_, err = pd.getEmptyTaggedFieldArray()
 	return err
 }
 
@@ -23,6 +27,7 @@ func (p *GroupProtocol) encode(pe packetEncoder) (err error) {
 	if err := pe.putBytes(p.Metadata); err != nil {
 		return err
 	}
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
@@ -52,6 +57,44 @@ type JoinGroupRequest struct {
 	// OrderedGroupProtocols contains an ordered list of protocols that the member
 	// supports.
 	OrderedGroupProtocols []*GroupProtocol
+	// Reason contains the reason why the member (re-)joins the group (KIP-800).
+	Reason *string
+}
+
+func (r *JoinGroupRequest) setVersion(v int16) {
+	r.Version = v
+}
+
+func NewJoinGroupRequest(version KafkaVersion) *JoinGroupRequest {
+	request := &JoinGroupRequest{}
+	if version.IsAtLeast(V3_2_0_0) {
+		// Version 8 adds the Reason for the (re-)join (KIP-800).
+		request.Version = 8
+	} else if version.IsAtLeast(V2_5_0_0) {
+		// Version 7 makes the response ProtocolName nullable (KIP-559).
+		request.Version = 7
+	} else if version.IsAtLeast(V2_4_0_0) {
+		// Version 6 is the first flexible version.
+		request.Version = 6
+	} else if version.IsAtLeast(V2_3_0_0) {
+		// Version 5 adds the GroupInstanceId for static membership (KIP-345).
+		request.Version = 5
+	} else if version.IsAtLeast(V2_2_0_0) {
+		// From version 4 onwards a join with an empty member id is answered
+		// with ErrMemberIdRequired and an assigned id, and the client sends a
+		// second request with that id to actually join (KIP-394).
+		request.Version = 4
+	} else if version.IsAtLeast(V2_0_0_0) {
+		// Version 3 is the same as version 2.
+		request.Version = 3
+	} else if version.IsAtLeast(V0_11_0_0) {
+		// Version 2 is the same as version 1.
+		request.Version = 2
+	} else if version.IsAtLeast(V0_10_1_0) {
+		// Version 1 adds the RebalanceTimeout.
+		request.Version = 1
+	}
+	return request
 }
 
 func (r *JoinGroupRequest) encode(pe packetEncoder) error {
@@ -76,7 +119,7 @@ func (r *JoinGroupRequest) encode(pe packetEncoder) error {
 
 	if len(r.GroupProtocols) > 0 {
 		if len(r.OrderedGroupProtocols) > 0 {
-			return PacketDecodingError{"cannot specify both GroupProtocols and OrderedGroupProtocols on JoinGroupRequest"}
+			return PacketEncodingError{"cannot specify both GroupProtocols and OrderedGroupProtocols on JoinGroupRequest"}
 		}
 
 		if err := pe.putArrayLength(len(r.GroupProtocols)); err != nil {
@@ -89,6 +132,7 @@ func (r *JoinGroupRequest) encode(pe packetEncoder) error {
 			if err := pe.putBytes(metadata); err != nil {
 				return err
 			}
+			pe.putEmptyTaggedFieldArray()
 		}
 	} else {
 		if err := pe.putArrayLength(len(r.OrderedGroupProtocols)); err != nil {
@@ -101,6 +145,13 @@ func (r *JoinGroupRequest) encode(pe packetEncoder) error {
 		}
 	}
 
+	if r.Version >= 8 {
+		if err := pe.putNullableString(r.Reason); err != nil {
+			return err
+		}
+	}
+
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
@@ -139,25 +190,34 @@ func (r *JoinGroupRequest) decode(pd packetDecoder, version int16) (err error) {
 	if err != nil {
 		return err
 	}
-	if n == 0 {
-		return nil
+	if n < 0 {
+		return errInvalidArrayLength
 	}
 
-	r.GroupProtocols = make(map[string][]byte)
-	for i := 0; i < n; i++ {
-		protocol := &GroupProtocol{}
-		if err := protocol.decode(pd); err != nil {
+	if n > 0 {
+		r.GroupProtocols = make(map[string][]byte)
+		for range n {
+			protocol := &GroupProtocol{}
+			if err := protocol.decode(pd); err != nil {
+				return err
+			}
+			r.GroupProtocols[protocol.Name] = protocol.Metadata
+			r.OrderedGroupProtocols = append(r.OrderedGroupProtocols, protocol)
+		}
+	}
+
+	if version >= 8 {
+		if r.Reason, err = pd.getNullableString(); err != nil {
 			return err
 		}
-		r.GroupProtocols[protocol.Name] = protocol.Metadata
-		r.OrderedGroupProtocols = append(r.OrderedGroupProtocols, protocol)
 	}
 
-	return nil
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }
 
 func (r *JoinGroupRequest) key() int16 {
-	return 11
+	return apiKeyJoinGroup
 }
 
 func (r *JoinGroupRequest) version() int16 {
@@ -165,15 +225,32 @@ func (r *JoinGroupRequest) version() int16 {
 }
 
 func (r *JoinGroupRequest) headerVersion() int16 {
+	if r.Version >= 6 {
+		return 2
+	}
 	return 1
 }
 
 func (r *JoinGroupRequest) isValidVersion() bool {
-	return r.Version >= 0 && r.Version <= 5
+	return r.Version >= 0 && r.Version <= 8
+}
+
+func (r *JoinGroupRequest) isFlexible() bool {
+	return r.isFlexibleVersion(r.Version)
+}
+
+func (r *JoinGroupRequest) isFlexibleVersion(version int16) bool {
+	return version >= 6
 }
 
 func (r *JoinGroupRequest) requiredVersion() KafkaVersion {
 	switch r.Version {
+	case 8:
+		return V3_2_0_0
+	case 7:
+		return V2_5_0_0
+	case 6:
+		return V2_4_0_0
 	case 5:
 		return V2_3_0_0
 	case 4:

@@ -26,7 +26,7 @@ func encode(e encoder, metricRegistry metrics.Registry) ([]byte, error) {
 	var prepEnc prepEncoder
 	var realEnc realEncoder
 
-	err := e.encode(&prepEnc)
+	err := e.encode(prepareFlexibleEncoder(&prepEnc, e))
 	if err != nil {
 		return nil, err
 	}
@@ -37,13 +37,23 @@ func encode(e encoder, metricRegistry metrics.Registry) ([]byte, error) {
 
 	realEnc.raw = make([]byte, prepEnc.length)
 	realEnc.registry = metricRegistry
-	err = e.encode(&realEnc)
+	err = e.encode(prepareFlexibleEncoder(&realEnc, e))
 	if err != nil {
 		return nil, err
 	}
 
 	return realEnc.raw, nil
 }
+
+// taggedFieldValue adapts an encode closure for encode(); tagged-field values
+// are always compact-encoded, so it reports itself as flexible
+type taggedFieldValue func(pe packetEncoder) error
+
+func (f taggedFieldValue) encode(pe packetEncoder) error { return f(pe) }
+
+func (f taggedFieldValue) isFlexible() bool { return true }
+
+func (f taggedFieldValue) isFlexibleVersion(int16) bool { return true }
 
 // decoder is the interface that wraps the basic Decode method.
 // Anything implementing Decoder can be extracted from bytes using Kafka's encoding rules.
@@ -55,13 +65,17 @@ type versionedDecoder interface {
 	decode(pd packetDecoder, version int16) error
 }
 
+type flexibleVersion interface {
+	isFlexibleVersion(version int16) bool
+	isFlexible() bool
+}
+
 // decode takes bytes and a decoder and fills the fields of the decoder from the bytes,
 // interpreted using Kafka's encoding rules.
 func decode(buf []byte, in decoder, metricRegistry metrics.Registry) error {
 	if buf == nil {
 		return nil
 	}
-
 	helper := realDecoder{
 		raw:      buf,
 		registry: metricRegistry,
@@ -72,7 +86,7 @@ func decode(buf []byte, in decoder, metricRegistry metrics.Registry) error {
 	}
 
 	if helper.off != len(buf) {
-		return PacketDecodingError{"invalid length"}
+		return PacketDecodingError{fmt.Sprintf("invalid length: buf=%d decoded=%d %#v", len(buf), helper.off, in)}
 	}
 
 	return nil
@@ -83,20 +97,59 @@ func versionedDecode(buf []byte, in versionedDecoder, version int16, metricRegis
 		return nil
 	}
 
-	helper := realDecoder{
+	helper := prepareFlexibleDecoder(&realDecoder{
 		raw:      buf,
 		registry: metricRegistry,
-	}
-	err := in.decode(&helper, version)
+	}, in, version)
+	err := in.decode(helper, version)
 	if err != nil {
 		return err
 	}
 
-	if helper.off != len(buf) {
+	if remaining := helper.remaining(); remaining != 0 {
 		return PacketDecodingError{
-			Info: fmt.Sprintf("invalid length (off=%d, len=%d)", helper.off, len(buf)),
+			Info: fmt.Sprintf("invalid length len=%d remaining=%d", len(buf), remaining),
 		}
 	}
 
 	return nil
+}
+
+func prepareFlexibleDecoder(pd *realDecoder, in versionedDecoder, version int16) packetDecoder {
+	if flexibleDecoder, ok := in.(flexibleVersion); ok && flexibleDecoder.isFlexibleVersion(version) {
+		return &realFlexibleDecoder{pd}
+	}
+	return pd
+}
+
+func prepareFlexibleEncoder(pe packetEncoder, req encoder) packetEncoder {
+	if flexibleEncoder, ok := req.(flexibleVersion); ok && flexibleEncoder.isFlexible() {
+		switch e := pe.(type) {
+		case *prepEncoder:
+			return &prepFlexibleEncoder{e}
+		case *realEncoder:
+			return &realFlexibleEncoder{e}
+		default:
+			return pe
+		}
+	}
+	return pe
+}
+
+func downgradeFlexibleDecoder(pd packetDecoder) packetDecoder {
+	if f, ok := pd.(*realFlexibleDecoder); ok {
+		return f.realDecoder
+	}
+	return pd
+}
+
+func downgradeFlexibleEncoder(pe packetEncoder) packetEncoder {
+	switch pe := pe.(type) {
+	case *prepFlexibleEncoder:
+		return pe.prepEncoder
+	case *realFlexibleEncoder:
+		return pe.realEncoder
+	default:
+		return pe
+	}
 }

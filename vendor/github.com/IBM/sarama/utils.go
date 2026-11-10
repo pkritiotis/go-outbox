@@ -3,8 +3,15 @@ package sarama
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"net"
 	"regexp"
+	"time"
+)
+
+const (
+	defaultRetryBackoff    = 100 * time.Millisecond
+	defaultRetryMaxBackoff = 1000 * time.Millisecond
 )
 
 type none struct{}
@@ -203,9 +210,21 @@ var (
 	V3_6_2_0  = newKafkaVersion(3, 6, 2, 0)
 	V3_7_0_0  = newKafkaVersion(3, 7, 0, 0)
 	V3_7_1_0  = newKafkaVersion(3, 7, 1, 0)
+	V3_7_2_0  = newKafkaVersion(3, 7, 2, 0)
 	V3_8_0_0  = newKafkaVersion(3, 8, 0, 0)
 	V3_8_1_0  = newKafkaVersion(3, 8, 1, 0)
 	V3_9_0_0  = newKafkaVersion(3, 9, 0, 0)
+	V3_9_1_0  = newKafkaVersion(3, 9, 1, 0)
+	V3_9_2_0  = newKafkaVersion(3, 9, 2, 0)
+	V4_0_0_0  = newKafkaVersion(4, 0, 0, 0)
+	V4_0_1_0  = newKafkaVersion(4, 0, 1, 0)
+	V4_1_0_0  = newKafkaVersion(4, 1, 0, 0)
+	V4_1_1_0  = newKafkaVersion(4, 1, 1, 0)
+	V4_1_2_0  = newKafkaVersion(4, 1, 2, 0)
+	V4_2_0_0  = newKafkaVersion(4, 2, 0, 0)
+	V4_2_1_0  = newKafkaVersion(4, 2, 1, 0)
+	V4_3_0_0  = newKafkaVersion(4, 3, 0, 0)
+	V4_3_1_0  = newKafkaVersion(4, 3, 1, 0)
 
 	SupportedVersions = []KafkaVersion{
 		V0_8_2_0,
@@ -274,29 +293,26 @@ var (
 		V3_6_2_0,
 		V3_7_0_0,
 		V3_7_1_0,
+		V3_7_2_0,
 		V3_8_0_0,
 		V3_8_1_0,
 		V3_9_0_0,
+		V3_9_1_0,
+		V3_9_2_0,
+		V4_0_0_0,
+		V4_0_1_0,
+		V4_1_0_0,
+		V4_1_1_0,
+		V4_1_2_0,
+		V4_2_0_0,
+		V4_2_1_0,
+		V4_3_0_0,
+		V4_3_1_0,
 	}
-	MinVersion     = V0_8_2_0
-	MaxVersion     = V3_9_0_0
-	DefaultVersion = V2_1_0_0
-
-	// reduced set of protocol versions to matrix test
-	fvtRangeVersions = []KafkaVersion{
-		V0_8_2_2,
-		V0_10_2_2,
-		V1_0_2_0,
-		V1_1_1_0,
-		V2_0_1_0,
-		V2_2_2_0,
-		V2_4_1_0,
-		V2_6_3_0,
-		V2_8_2_0,
-		V3_1_2_0,
-		V3_3_2_0,
-		V3_6_2_0,
-	}
+	MinVersion = V0_8_2_0
+	MaxVersion = V4_3_1_0
+	// DefaultVersion is 2.8 as Sarama has full protocol coverage for that version
+	DefaultVersion = V2_8_0_0
 )
 
 var (
@@ -339,4 +355,40 @@ func (v KafkaVersion) String() string {
 	}
 
 	return fmt.Sprintf("%d.%d.%d", v.version[0], v.version[1], v.version[2])
+}
+
+// NewExponentialBackoff returns a function that implements an exponential backoff strategy with jitter.
+// It follows KIP-580, implementing the formula:
+// MIN(retry.backoff.max.ms, (retry.backoff.ms * 2**(failures - 1)) * random(0.8, 1.2))
+// This ensures retries start with `backoff` and exponentially increase until `maxBackoff`, with added jitter.
+// The behavior when `failures = 0` is not explicitly defined in KIP-580 and is left to implementation discretion.
+//
+// Example usage:
+//
+//	backoffFunc := sarama.NewExponentialBackoff(config.Producer.Retry.Backoff, 2*time.Second)
+//	config.Producer.Retry.BackoffFunc = backoffFunc
+func NewExponentialBackoff(backoff time.Duration, maxBackoff time.Duration) func(retries, maxRetries int) time.Duration {
+	if backoff <= 0 {
+		backoff = defaultRetryBackoff
+	}
+	if maxBackoff <= 0 {
+		maxBackoff = defaultRetryMaxBackoff
+	}
+
+	if backoff > maxBackoff {
+		Logger.Println("Warning: backoff is greater than maxBackoff, using maxBackoff instead.")
+		backoff = maxBackoff
+	}
+
+	return func(retries, maxRetries int) time.Duration {
+		if retries <= 0 {
+			return backoff
+		}
+
+		calculatedBackoff := backoff * time.Duration(1<<(retries-1))
+		jitter := 0.8 + 0.4*rand.Float64()
+		calculatedBackoff = time.Duration(float64(calculatedBackoff) * jitter)
+
+		return min(calculatedBackoff, maxBackoff)
+	}
 }

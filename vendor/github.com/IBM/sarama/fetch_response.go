@@ -29,13 +29,37 @@ func (t *AbortedTransaction) decode(pd packetDecoder) (err error) {
 		return err
 	}
 
-	return nil
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }
 
 func (t *AbortedTransaction) encode(pe packetEncoder) (err error) {
 	pe.putInt64(t.ProducerID)
 	pe.putInt64(t.FirstOffset)
 
+	pe.putEmptyTaggedFieldArray()
+
+	return nil
+}
+
+type FetchResponseDivergingEpoch struct {
+	Epoch     int32
+	EndOffset int64
+}
+
+type FetchResponseCurrentLeader struct {
+	LeaderID    int32
+	LeaderEpoch int32
+}
+
+type fetchRecordsSet []*Records
+
+func (r fetchRecordsSet) encode(pe packetEncoder) error {
+	for _, records := range r {
+		if err := records.encode(pe); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -48,10 +72,13 @@ type FetchResponseBlock struct {
 	// partition. This is the last offset such that the state of all
 	// transactional records prior to this offset have been decided (ABORTED or
 	// COMMITTED)
-	LastStableOffset       int64
-	LastRecordsBatchOffset *int64
+	LastStableOffset int64
 	// LogStartOffset contains the current log start offset.
 	LogStartOffset int64
+	// DivergingEpoch contains the largest epoch and end offset known to diverge.
+	DivergingEpoch *FetchResponseDivergingEpoch
+	// CurrentLeader contains the current partition leader and leader epoch.
+	CurrentLeader *FetchResponseCurrentLeader
 	// AbortedTransactions contains the aborted transactions.
 	AbortedTransactions []*AbortedTransaction
 	// PreferredReadReplica contains the preferred read replica for the
@@ -62,6 +89,15 @@ type FetchResponseBlock struct {
 
 	Partial bool
 	Records *Records // deprecated: use FetchResponseBlock.RecordsSet
+
+	// recordsNextOffset contains the next consecutive offset following this response block.
+	// This field is computed locally and is not part of the server's binary response.
+	recordsNextOffset *int64
+
+	// partialBatchSize is the total on-wire size needed to fetch the trailing
+	// partial batch fully, when one is present. Zero if no partial trailing
+	// batch was detected or the size is unknown (e.g. legacy MessageSet).
+	partialBatchSize int32
 }
 
 func (b *FetchResponseBlock) decode(pd packetDecoder, version int16) (err error) {
@@ -71,11 +107,10 @@ func (b *FetchResponseBlock) decode(pd packetDecoder, version int16) (err error)
 		sizeMetric = getOrRegisterHistogram("consumer-fetch-response-size", metricRegistry)
 	}
 
-	tmp, err := pd.getInt16()
+	b.Err, err = pd.getKError()
 	if err != nil {
 		return err
 	}
-	b.Err = KError(tmp)
 
 	b.HighWaterMarkOffset, err = pd.getInt64()
 	if err != nil {
@@ -104,7 +139,7 @@ func (b *FetchResponseBlock) decode(pd packetDecoder, version int16) (err error)
 			b.AbortedTransactions = make([]*AbortedTransaction, numTransact)
 		}
 
-		for i := 0; i < numTransact; i++ {
+		for i := range numTransact {
 			transact := new(AbortedTransaction)
 			if err = transact.decode(pd); err != nil {
 				return err
@@ -122,17 +157,31 @@ func (b *FetchResponseBlock) decode(pd packetDecoder, version int16) (err error)
 		b.PreferredReadReplica = -1
 	}
 
-	recordsSize, err := pd.getInt32()
-	if err != nil {
-		return err
-	}
-	if sizeMetric != nil {
-		sizeMetric.Update(int64(recordsSize))
-	}
+	var recordsDecoder packetDecoder
+	if version >= 12 {
+		recordsBytes, err := pd.getBytes()
+		if err != nil {
+			return err
+		}
+		if sizeMetric != nil {
+			sizeMetric.Update(int64(len(recordsBytes)))
+		}
+		// record batches are not flexible-encoded, so decode the payload with a
+		// plain realDecoder rather than the flexible parent
+		recordsDecoder = &realDecoder{raw: recordsBytes}
+	} else {
+		recordsSize, err := pd.getInt32()
+		if err != nil {
+			return err
+		}
+		if sizeMetric != nil {
+			sizeMetric.Update(int64(recordsSize))
+		}
 
-	recordsDecoder, err := pd.getSubset(int(recordsSize))
-	if err != nil {
-		return err
+		recordsDecoder, err = pd.getSubset(int(recordsSize))
+		if err != nil {
+			return err
+		}
 	}
 
 	b.RecordsSet = []*Records{}
@@ -150,7 +199,7 @@ func (b *FetchResponseBlock) decode(pd packetDecoder, version int16) (err error)
 			return err
 		}
 
-		b.LastRecordsBatchOffset, err = records.recordsOffset()
+		b.recordsNextOffset, err = records.nextOffset()
 		if err != nil {
 			return err
 		}
@@ -179,11 +228,46 @@ func (b *FetchResponseBlock) decode(pd packetDecoder, version int16) (err error)
 		}
 
 		if partial || overflow {
+			if partial {
+				size, err := records.partialSize()
+				if err != nil {
+					return err
+				}
+				b.partialBatchSize = size
+			}
 			break
 		}
 	}
 
-	return nil
+	if version >= 12 {
+		err = pd.getTaggedFieldArray(taggedFieldDecoders{
+			0: func(pd packetDecoder) error {
+				epoch, err := pd.getInt32()
+				if err != nil {
+					return err
+				}
+				endOffset, err := pd.getInt64()
+				if err != nil {
+					return err
+				}
+				b.DivergingEpoch = &FetchResponseDivergingEpoch{Epoch: epoch, EndOffset: endOffset}
+				return nil
+			},
+			1: func(pd packetDecoder) error {
+				leaderID, err := pd.getInt32()
+				if err != nil {
+					return err
+				}
+				leaderEpoch, err := pd.getInt32()
+				if err != nil {
+					return err
+				}
+				b.CurrentLeader = &FetchResponseCurrentLeader{LeaderID: leaderID, LeaderEpoch: leaderEpoch}
+				return nil
+			},
+		})
+	}
+	return err
 }
 
 func (b *FetchResponseBlock) numRecords() (int, error) {
@@ -214,7 +298,7 @@ func (b *FetchResponseBlock) isPartial() (bool, error) {
 }
 
 func (b *FetchResponseBlock) encode(pe packetEncoder, version int16) (err error) {
-	pe.putInt16(int16(b.Err))
+	pe.putKError(b.Err)
 
 	pe.putInt64(b.HighWaterMarkOffset)
 
@@ -239,6 +323,18 @@ func (b *FetchResponseBlock) encode(pe packetEncoder, version int16) (err error)
 		pe.putInt32(b.PreferredReadReplica)
 	}
 
+	if version >= 12 {
+		recordsBytes, err := encode(fetchRecordsSet(b.RecordsSet), nil)
+		if err != nil {
+			return err
+		}
+		if err = pe.putBytes(recordsBytes); err != nil {
+			return err
+		}
+		b.encodeTaggedFields(pe)
+		return nil
+	}
+
 	pe.push(&lengthField{})
 	for _, records := range b.RecordsSet {
 		err = records.encode(pe)
@@ -247,6 +343,32 @@ func (b *FetchResponseBlock) encode(pe packetEncoder, version int16) (err error)
 		}
 	}
 	return pe.pop()
+}
+
+func (b *FetchResponseBlock) encodeTaggedFields(pe packetEncoder) {
+	var numTaggedFields uint64
+	if b.DivergingEpoch != nil {
+		numTaggedFields++
+	}
+	if b.CurrentLeader != nil {
+		numTaggedFields++
+	}
+
+	pe.putUVarint(numTaggedFields)
+	if b.DivergingEpoch != nil {
+		pe.putUVarint(0)
+		pe.putUVarint(13) // int32 plus int64 plus the struct's empty tagged fields
+		pe.putInt32(b.DivergingEpoch.Epoch)
+		pe.putInt64(b.DivergingEpoch.EndOffset)
+		pe.putEmptyTaggedFieldArray()
+	}
+	if b.CurrentLeader != nil {
+		pe.putUVarint(1)
+		pe.putUVarint(9) // two int32s plus the struct's empty tagged fields
+		pe.putInt32(b.CurrentLeader.LeaderID)
+		pe.putInt32(b.CurrentLeader.LeaderEpoch)
+		pe.putEmptyTaggedFieldArray()
+	}
 }
 
 func (b *FetchResponseBlock) getAbortedTransactions() []*AbortedTransaction {
@@ -278,15 +400,17 @@ type FetchResponse struct {
 	Timestamp     time.Time
 }
 
+func (r *FetchResponse) setVersion(v int16) {
+	r.Version = v
+}
+
 func (r *FetchResponse) decode(pd packetDecoder, version int16) (err error) {
 	r.Version = version
 
 	if r.Version >= 1 {
-		throttle, err := pd.getInt32()
-		if err != nil {
+		if r.ThrottleTime, err = pd.getDurationMs(); err != nil {
 			return err
 		}
-		r.ThrottleTime = time.Duration(throttle) * time.Millisecond
 	}
 
 	if r.Version >= 7 {
@@ -304,9 +428,12 @@ func (r *FetchResponse) decode(pd packetDecoder, version int16) (err error) {
 	if err != nil {
 		return err
 	}
+	if numTopics < 0 {
+		return errInvalidArrayLength
+	}
 
 	r.Blocks = make(map[string]map[int32]*FetchResponseBlock, numTopics)
-	for i := 0; i < numTopics; i++ {
+	for range numTopics {
 		name, err := pd.getString()
 		if err != nil {
 			return err
@@ -316,10 +443,13 @@ func (r *FetchResponse) decode(pd packetDecoder, version int16) (err error) {
 		if err != nil {
 			return err
 		}
+		if numBlocks < 0 {
+			return errInvalidArrayLength
+		}
 
 		r.Blocks[name] = make(map[int32]*FetchResponseBlock, numBlocks)
 
-		for j := 0; j < numBlocks; j++ {
+		for range numBlocks {
 			id, err := pd.getInt32()
 			if err != nil {
 				return err
@@ -332,14 +462,18 @@ func (r *FetchResponse) decode(pd packetDecoder, version int16) (err error) {
 			}
 			r.Blocks[name][id] = block
 		}
+		if _, err = pd.getEmptyTaggedFieldArray(); err != nil {
+			return err
+		}
 	}
 
-	return nil
+	_, err = pd.getEmptyTaggedFieldArray()
+	return err
 }
 
 func (r *FetchResponse) encode(pe packetEncoder) (err error) {
 	if r.Version >= 1 {
-		pe.putInt32(int32(r.ThrottleTime / time.Millisecond))
+		pe.putDurationMs(r.ThrottleTime)
 	}
 
 	if r.Version >= 7 {
@@ -370,12 +504,14 @@ func (r *FetchResponse) encode(pe packetEncoder) (err error) {
 				return err
 			}
 		}
+		pe.putEmptyTaggedFieldArray()
 	}
+	pe.putEmptyTaggedFieldArray()
 	return nil
 }
 
 func (r *FetchResponse) key() int16 {
-	return 1
+	return apiKeyFetch
 }
 
 func (r *FetchResponse) version() int16 {
@@ -383,15 +519,28 @@ func (r *FetchResponse) version() int16 {
 }
 
 func (r *FetchResponse) headerVersion() int16 {
+	if r.Version >= 12 {
+		return 1
+	}
 	return 0
 }
 
 func (r *FetchResponse) isValidVersion() bool {
-	return r.Version >= 0 && r.Version <= 11
+	return r.Version >= 0 && r.Version <= 12
+}
+
+func (r *FetchResponse) isFlexible() bool {
+	return r.isFlexibleVersion(r.Version)
+}
+
+func (r *FetchResponse) isFlexibleVersion(version int16) bool {
+	return version >= 12
 }
 
 func (r *FetchResponse) requiredVersion() KafkaVersion {
 	switch r.Version {
+	case 12:
+		return V2_7_0_0
 	case 11:
 		return V2_3_0_0
 	case 9, 10:

@@ -6,13 +6,17 @@
 package flate
 
 import (
-	"encoding/binary"
 	"fmt"
+
+	"github.com/klauspost/compress/internal/le"
+	"github.com/klauspost/compress/internal/regmask"
 )
 
 type fastEnc interface {
 	Encode(dst *tokens, src []byte)
 	Reset()
+	// hasHistory reports whether there is previous data to match against.
+	hasHistory() bool
 }
 
 func newFastEnc(level int) fastEnc {
@@ -46,6 +50,15 @@ const (
 	bTableSize   = 1 << bTableBits                                  // Size of the table
 	allocHistory = maxStoreBlockSize * 5                            // Size to preallocate for history.
 	bufferReset  = (1 << 31) - allocHistory - maxStoreBlockSize - 1 // Reset the buffer offset when reaching this.
+
+	// inputMargin is the number of bytes the encoders must be able to read
+	// past the last position they look for a match at.
+	inputMargin = 12 - 1
+
+	// minNonLiteralBlockSize is the smallest block Encode will emit tokens for.
+	// Smaller blocks are only added to the history and must be written by the
+	// caller.
+	minNonLiteralBlockSize = 1 + 1 + inputMargin
 )
 
 const (
@@ -58,11 +71,11 @@ const (
 )
 
 func load3232(b []byte, i int32) uint32 {
-	return binary.LittleEndian.Uint32(b[i:])
+	return le.Load32(b, i)
 }
 
 func load6432(b []byte, i int32) uint64 {
-	return binary.LittleEndian.Uint64(b[i:])
+	return le.Load64(b, i)
 }
 
 type tableEntry struct {
@@ -107,7 +120,7 @@ type tableEntryPrev struct {
 // hash7 returns the hash of the lowest 7 bytes of u to fit in a hash table with h bits.
 // Preferably h should be a constant and should always be <64.
 func hash7(u uint64, h uint8) uint32 {
-	return uint32(((u << (64 - 56)) * prime7bytes) >> ((64 - h) & reg8SizeMask64))
+	return uint32(((u << (64 - 56)) * prime7bytes) >> ((64 - h) & regmask.Shift64ByUint8))
 }
 
 // hashLen returns a hash of the lowest mls bytes of with length output bits.
@@ -134,33 +147,7 @@ func hashLen(u uint64, length, mls uint8) uint32 {
 // matchlen will return the match length between offsets and t in src.
 // The maximum length returned is maxMatchLength - 4.
 // It is assumed that s > t, that t >=0 and s < len(src).
-func (e *fastGen) matchlen(s, t int32, src []byte) int32 {
-	if debugDecode {
-		if t >= s {
-			panic(fmt.Sprint("t >=s:", t, s))
-		}
-		if int(s) >= len(src) {
-			panic(fmt.Sprint("s >= len(src):", s, len(src)))
-		}
-		if t < 0 {
-			panic(fmt.Sprint("t < 0:", t))
-		}
-		if s-t > maxMatchOffset {
-			panic(fmt.Sprint(s, "-", t, "(", s-t, ") > maxMatchLength (", maxMatchOffset, ")"))
-		}
-	}
-	s1 := int(s) + maxMatchLength - 4
-	if s1 > len(src) {
-		s1 = len(src)
-	}
-
-	// Extend the match to be as long as possible.
-	return int32(matchLen(src[s:s1], src[t:]))
-}
-
-// matchlenLong will return the match length between offsets and t in src.
-// It is assumed that s > t, that t >=0 and s < len(src).
-func (e *fastGen) matchlenLong(s, t int32, src []byte) int32 {
+func (e *fastGen) matchlen(s, t int, src []byte) int32 {
 	if debugDeflate {
 		if t >= s {
 			panic(fmt.Sprint("t >=s:", t, s))
@@ -175,7 +162,28 @@ func (e *fastGen) matchlenLong(s, t int32, src []byte) int32 {
 			panic(fmt.Sprint(s, "-", t, "(", s-t, ") > maxMatchLength (", maxMatchOffset, ")"))
 		}
 	}
-	// Extend the match to be as long as possible.
+	a := src[s:min(s+maxMatchLength-4, len(src))]
+	b := src[t:]
+	return int32(matchLen(a, b))
+}
+
+// matchlenLong will return the match length between offsets and t in src.
+// It is assumed that s > t, that t >=0 and s < len(src).
+func (e *fastGen) matchlenLong(s, t int, src []byte) int32 {
+	if debugDeflate {
+		if t >= s {
+			panic(fmt.Sprint("t >=s:", t, s))
+		}
+		if int(s) >= len(src) {
+			panic(fmt.Sprint("s >= len(src):", s, len(src)))
+		}
+		if t < 0 {
+			panic(fmt.Sprint("t < 0:", t))
+		}
+		if s-t > maxMatchOffset {
+			panic(fmt.Sprint(s, "-", t, "(", s-t, ") > maxMatchLength (", maxMatchOffset, ")"))
+		}
+	}
 	return int32(matchLen(src[s:], src[t:]))
 }
 
@@ -191,3 +199,5 @@ func (e *fastGen) Reset() {
 	}
 	e.hist = e.hist[:0]
 }
+
+func (e *fastGen) hasHistory() bool { return len(e.hist) > 0 }
