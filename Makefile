@@ -7,7 +7,7 @@ help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 lint: ## Perform linting
-	golangci-lint run --disable-all -E revive  --exclude-use-default=false --modules-download-mode=vendor
+	golangci-lint run --default=none -E revive --modules-download-mode=vendor
 
 test: ## Run unit tests
 	go test -mod=vendor `go list ./... | grep -v 'doc'` -race -cover

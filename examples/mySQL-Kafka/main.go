@@ -1,3 +1,4 @@
+// Package main is an example of using the outbox with MySQL and Kafka.
 package main
 
 import (
